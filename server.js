@@ -15,8 +15,9 @@ app.use(helmet());
 app.use(cors({
   origin: [
     'http://localhost:3000',  // Dashboard
+    'http://localhost:3001',  // Settings UI
     'http://localhost:8080',  // Widget
-    'http://localhost:5000',  // Settings
+    'http://localhost:5000',  // Alternative Settings port
     'https://your-domain.com',
     /\.wixsite\.com$/,
     /\.editorx\.io$/
@@ -57,6 +58,7 @@ app.use('/api/yoga-plans', require('./routes/yoga-plans'));
 app.use('/api/ai', require('./routes/ai-generation'));
 app.use('/api/events', require('./routes/events'));
 app.use('/api/settings', require('./routes/settings'));
+app.use('/api/analytics', require('./routes/analytics'));
 
 /**
  * @swagger
