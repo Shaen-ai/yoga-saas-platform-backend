@@ -12,24 +12,56 @@ const PORT = process.env.PORT || 8000;
 
 // Security middleware
 app.use(helmet());
+
+// CORS configuration - Allow all origins for widget embedding
 app.use(cors({
-  origin: [
-    'http://localhost:3000',  // Dashboard
-    'http://localhost:3001',  // Settings UI
-    'http://localhost:8080',  // Widget
-    'http://localhost:5000',  // Alternative Settings port
-    'https://your-domain.com',
-    /\.wixsite\.com$/,
-    /\.editorx\.io$/
-  ],
-  credentials: true
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps or Postman)
+    if (!origin) return callback(null, true);
+    
+    // List of allowed origins
+    const allowedOrigins = [
+      'http://localhost:3000',  // Widget dev server
+      'http://localhost:3001',  // Settings UI
+      'http://localhost:3002',  // Dashboard
+      'http://localhost:8080',  // Widget alternative
+      'http://localhost:5000',  // Alternative Settings port
+      'https://yoga-api.nextechspires.com',
+      'https://yoga-dashboard.nextechspires.com',
+      'https://yoga-settings.nextechspires.com',
+      'https://yoga-widget.nextechspires.com'
+    ];
+    
+    // Check if origin is in allowed list or matches patterns
+    if (allowedOrigins.indexOf(origin) !== -1 || 
+        /\.wixsite\.com$/.test(origin) || 
+        /\.editorx\.io$/.test(origin) ||
+        /\.wix\.com$/.test(origin) ||
+        /\.netlify\.app$/.test(origin) ||
+        /\.vercel\.app$/.test(origin)) {
+      callback(null, true);
+    } else {
+      // For widget embedding, allow all origins but log them
+      console.log('CORS request from origin:', origin);
+      callback(null, true); // Allow all origins for widget
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID']
 }));
 
-// Rate limiting
+// Rate limiting with higher limits for development
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.'
+  max: 1000, // increased limit for development
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Skip rate limiting for settings endpoints
+  skip: (req) => {
+    return req.path.includes('/settings') || req.path.includes('/widget-config');
+  }
 });
 app.use('/api', limiter);
 
@@ -59,6 +91,7 @@ app.use('/api/ai', require('./routes/ai-generation'));
 app.use('/api/events', require('./routes/events'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/analytics', require('./routes/analytics'));
+app.use('/api/payment-settings', require('./routes/payment-settings'));
 
 /**
  * @swagger
@@ -129,7 +162,8 @@ app.get('/', (req, res) => {
       plans: '/api/yoga-plans',
       ai: '/api/ai',
       events: '/api/events',
-      settings: '/api/settings'
+      settings: '/api/settings',
+      paymentSettings: '/api/payment-settings'
     }
   });
 });
