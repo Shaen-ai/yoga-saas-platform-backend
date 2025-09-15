@@ -38,6 +38,7 @@ let globalSettings = {
     frequency: 'daily'
   },
   widget: {
+    title: 'Yoga Classes & Events',
     autoStart: true,
     showWelcome: true,
     defaultView: 'calendar',
@@ -68,16 +69,102 @@ router.put('/', (req, res) => {
 
 // Special endpoint for UI preferences used by settings panel
 router.get('/ui-preferences', (req, res) => {
-  res.json(globalSettings);
+  // Return settings in the format expected by the settings panel
+  const panelSettings = {
+    layout: {
+      defaultView: globalSettings.widget?.defaultView || 'yogaClasses',
+      defaultMode: 'calendar',
+      defaultCalendarLayout: globalSettings.calendar?.defaultView || 'month',
+      calendarView: globalSettings.calendar?.defaultView || 'month',
+      showModeSwitcher: true,
+      showCalendarHeader: true,
+      showHeader: globalSettings.widget?.showHeader !== false,
+      showMainHeader: true,
+      headerTitle: globalSettings.widget?.title || 'Yoga Classes',
+      showFooter: globalSettings.widget?.showFooter || false,
+      compactMode: globalSettings.uiPreferences?.compactMode || false,
+      showCreatePlanOption: true,
+      showYogaClassesOption: true,
+      showCalendarToggle: true,
+      showLanguageSelector: true,
+      showThemeToggle: true,
+      showSearchBar: true,
+      showFilters: true,
+      showInstructorInfo: globalSettings.widget?.showInstructor !== false,
+      showClassDuration: true,
+      showClassLevel: true,
+      showBookingButton: true,
+      showWaitlistOption: true
+    },
+    appearance: {
+      primaryColor: globalSettings.uiPreferences?.primaryColor || '#2563eb',
+      backgroundColor: '#ffffff',
+      headerColor: '#f8f9fa',
+      borderRadius: 8,
+      fontFamily: 'default',
+      fontSize: globalSettings.uiPreferences?.fontSize || 'medium'
+    },
+    calendar: {
+      weekStartsOn: globalSettings.calendar?.weekStartsOn || 'sunday',
+      timeFormat: '12h',
+      showWeekNumbers: false,
+      eventDisplay: 'block',
+      minTime: '06:00',
+      maxTime: '22:00'
+    },
+    behavior: {
+      autoSave: true,
+      confirmBeforeDelete: true,
+      animationsEnabled: globalSettings.uiPreferences?.animations !== false,
+      showTooltips: true,
+      language: globalSettings.uiPreferences?.language || 'en'
+    }
+  };
+  res.json(panelSettings);
 });
 
 router.post('/ui-preferences', (req, res) => {
-  // Update all settings from the UI panel
-  globalSettings = {
-    ...globalSettings,
-    ...req.body,
-    updatedAt: new Date()
-  };
+  // Update settings from the UI panel
+  if (req.body.layout) {
+    globalSettings.widget = {
+      ...globalSettings.widget,
+      defaultView: req.body.layout.defaultView,
+      showHeader: req.body.layout.showHeader,
+      showFooter: req.body.layout.showFooter,
+      title: req.body.layout.headerTitle,
+      showInstructor: req.body.layout.showInstructorInfo
+    };
+    globalSettings.calendar = {
+      ...globalSettings.calendar,
+      defaultView: req.body.layout.calendarView
+    };
+    globalSettings.uiPreferences.compactMode = req.body.layout.compactMode;
+  }
+
+  if (req.body.appearance) {
+    globalSettings.uiPreferences = {
+      ...globalSettings.uiPreferences,
+      primaryColor: req.body.appearance.primaryColor,
+      fontSize: req.body.appearance.fontSize
+    };
+  }
+
+  if (req.body.calendar) {
+    globalSettings.calendar = {
+      ...globalSettings.calendar,
+      weekStartsOn: req.body.calendar.weekStartsOn
+    };
+  }
+
+  if (req.body.behavior) {
+    globalSettings.uiPreferences = {
+      ...globalSettings.uiPreferences,
+      animations: req.body.behavior.animationsEnabled,
+      language: req.body.behavior.language
+    };
+  }
+
+  globalSettings.updatedAt = new Date();
   res.json({ success: true, settings: globalSettings });
 });
 
@@ -85,6 +172,7 @@ router.post('/ui-preferences', (req, res) => {
 router.get('/widget-config', (req, res) => {
   res.json({
     general: {
+      title: globalSettings.widget?.title || 'Yoga Classes & Events',
       siteName: globalSettings.widget?.siteName || 'Yoga Studio',
       language: globalSettings.uiPreferences?.language || 'en',
       timezone: globalSettings.calendar?.timezone || 'UTC',
@@ -113,6 +201,7 @@ router.post('/widget-config', (req, res) => {
     globalSettings.uiPreferences.language = req.body.general.language || globalSettings.uiPreferences.language;
     globalSettings.widget = {
       ...globalSettings.widget,
+      title: req.body.general.title || globalSettings.widget.title,
       siteName: req.body.general.siteName
     };
   }

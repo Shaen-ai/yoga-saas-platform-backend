@@ -6,7 +6,10 @@ const events = [];
 
 // Get all events
 router.get('/', (req, res) => {
-  res.json({ events });
+  res.json({
+    events,
+    total: events.length
+  });
 });
 
 // Create new event
@@ -73,3 +76,4 @@ router.post('/:id/register', (req, res) => {
 });
 
 module.exports = router;
+module.exports.events = events;

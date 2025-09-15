@@ -25,7 +25,26 @@ const mockPlans = [
       { day: 1, poses: ['Plank', 'Chaturanga', 'Warrior III'], duration: 30 },
       { day: 2, poses: ['Crow Pose', 'Side Plank', 'Boat Pose'], duration: 35 }
     ],
-    status: 'pending_approval'
+    status: 'approved',
+    reviewedAt: new Date('2025-09-14T18:30:46.037Z'),
+    reviewedBy: 'admin'
+  },
+  {
+    id: 'plan-3',
+    userId: 'user-1',
+    name: 'Advanced Power Flow',
+    duration: '8 weeks',
+    difficulty: 'advanced',
+    sessions: [
+      { day: 1, poses: ['Handstand', 'Scorpion Pose', 'Flying Pigeon'], duration: 45 },
+      { day: 2, poses: ['Crow Pose', 'Eight-Angle Pose', 'Firefly'], duration: 50 }
+    ],
+    status: 'pending_approval',
+    experience: 'advanced',
+    goals: ['strength', 'flexibility', 'balance'],
+    availableTime: 45,
+    frequency: 4,
+    createdAt: new Date()
   }
 ];
 
@@ -52,9 +71,18 @@ const mockPlans = [
  *                   type: number
  */
 router.get('/', (req, res) => {
+  const { status } = req.query;
+
+  let filteredPlans = mockPlans;
+
+  // Filter by status if provided
+  if (status) {
+    filteredPlans = mockPlans.filter(plan => plan.status === status);
+  }
+
   res.json({
-    plans: mockPlans,
-    total: mockPlans.length
+    plans: filteredPlans,
+    total: filteredPlans.length
   });
 });
 
@@ -211,6 +239,59 @@ function getIntensity(week, level) {
   return week > 2 ? 'increased ' + base : base;
 }
 
+// Alias for generate endpoint - for backward compatibility
+router.post('/generate-ai', async (req, res) => {
+  try {
+    const { userId, userData, assessment } = req.body;
+
+    const formData = userData || assessment || {
+      experience: 'beginner',
+      goals: 'general fitness',
+      availableTime: 30,
+      frequency: 3,
+      preferences: 'none'
+    };
+
+    // Prepare prompt for AI
+    const prompt = `Create a personalized yoga plan for:
+    - Experience: ${formData.experience}
+    - Goals: ${formData.goals}
+    - Health Issues: ${formData.healthIssues || 'None'}
+    - Available Time: ${formData.availableTime} minutes per session
+    - Frequency: ${formData.frequency} times per week
+    - Preferences: ${formData.preferences}`;
+
+    // Generate a structured plan
+    const newPlan = {
+      id: `plan-${Date.now()}`,
+      userId,
+      formData,
+      name: `Personalized ${formData.experience} Yoga Plan`,
+      duration: '4 weeks',
+      difficulty: formData.experience || 'beginner',
+      sessions: generateDetailedSessions(formData),
+      status: 'pending_approval',
+      aiGenerated: true,
+      createdAt: new Date(),
+      requiresApproval: true
+    };
+
+    mockPlans.push(newPlan);
+
+    res.json({
+      success: true,
+      message: 'Plan generated successfully',
+      plan: newPlan
+    });
+  } catch (error) {
+    console.error('Error in generate-ai:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate AI plan'
+    });
+  }
+});
+
 // Approve/reject plan
 router.put('/:id/approve', (req, res) => {
   const plan = mockPlans.find(p => p.id === req.params.id);
@@ -229,3 +310,4 @@ router.put('/:id/approve', (req, res) => {
 });
 
 module.exports = router;
+module.exports.mockPlans = mockPlans;

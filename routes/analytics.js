@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 
+// Import yoga plans to get pending count
+const yogaPlansRouter = require('./yoga-plans');
+
 // Get dashboard analytics
 router.get('/dashboard', async (req, res) => {
   try {
@@ -8,12 +11,27 @@ router.get('/dashboard', async (req, res) => {
     const today = new Date();
     const startOfWeek = new Date(today);
     startOfWeek.setDate(today.getDate() - today.getDay());
-    
+
+    // Get actual data from in-memory stores
+    const mockPlans = require('./yoga-plans').mockPlans || [];
+    const events = require('./events').events || [];
+    const mockUsers = require('./users').mockUsers || [];
+
+    // Calculate real counts
+    const pendingCount = mockPlans.filter(plan => plan.status === 'pending_approval').length;
+    const totalPlans = mockPlans.length;
+    const totalEvents = events.length;
+    const totalUsers = mockUsers.length;
+
+    // Calculate some mock revenue based on events
+    const baseRevenue = events.length * 50; // $50 per event average
+    const weekRevenue = Math.min(events.length * 250, 5400); // Cap at 5400 for demo
+
     const analytics = {
-      totalUsers: 245,
-      totalEvents: 42,
-      totalPlans: 18,
-      pendingApprovals: 3,
+      totalUsers: totalUsers,
+      totalEvents: totalEvents,
+      totalPlans: totalPlans,
+      pendingApprovals: pendingCount,
       upcomingEvents: [],
       recentActivity: [
         {
@@ -39,15 +57,15 @@ router.get('/dashboard', async (req, res) => {
         }
       ],
       todayStats: {
-        sessions: 8,
-        bookings: 42,
-        revenue: 1250,
+        sessions: Math.max(1, events.length),
+        bookings: Math.max(5, events.length * 3),
+        revenue: baseRevenue,
         attendance: 85
       },
       weekStats: {
-        totalSessions: 35,
-        totalBookings: 180,
-        totalRevenue: 5400,
+        totalSessions: Math.max(5, events.length * 2),
+        totalBookings: Math.max(10, events.length * 5),
+        totalRevenue: weekRevenue,
         avgAttendance: 78
       }
     };

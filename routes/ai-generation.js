@@ -3,25 +3,45 @@ const router = express.Router();
 
 // AI Plan Generation with OpenAI/Claude integration
 router.post('/generate-plan', async (req, res) => {
-  const { assessment } = req.body;
-  
-  // Simulate AI processing
-  setTimeout(() => {
+  try {
+    const { assessment } = req.body;
+
+    // Validate assessment data
+    if (!assessment) {
+      return res.status(400).json({
+        success: false,
+        message: 'Assessment data is required'
+      });
+    }
+
+    // Default values for missing fields
+    const experienceLevel = assessment.experience_level || 'beginner';
+    const sessionsPerWeek = assessment.sessions_per_week || 3;
+
+    // Simulate AI processing with a Promise to handle async properly
+    await new Promise(resolve => setTimeout(resolve, 500));
+
     const plan = {
       id: `ai-plan-${Date.now()}`,
-      title: `Personalized ${assessment.experience_level} Yoga Plan`,
+      title: `Personalized ${experienceLevel} Yoga Plan`,
       description: 'AI-generated yoga plan based on your assessment',
       weeks: 4,
-      sessionsPerWeek: assessment.sessions_per_week || 3,
-      poses: generatePoses(assessment),
+      sessionsPerWeek: sessionsPerWeek,
+      poses: generatePoses({ ...assessment, experience_level: experienceLevel }),
       createdAt: new Date()
     };
-    
+
     res.json({
       success: true,
       plan
     });
-  }, 500);
+  } catch (error) {
+    console.error('Error generating plan:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate plan'
+    });
+  }
 });
 
 // Helper function to generate poses based on assessment
