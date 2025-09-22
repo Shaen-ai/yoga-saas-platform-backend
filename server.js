@@ -5,7 +5,12 @@ const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./swagger.config');
+const { attachTenantInfo } = require('./middleware/tenantMiddleware');
 require('dotenv').config();
+
+// Validate environment variables
+const validateEnvironment = require('./utils/validateEnv');
+validateEnvironment();
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -48,7 +53,7 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID', 'X-Wix-Comp-Id', 'X-Wix-Instance']
 }));
 
 // Rate limiting with higher limits for development
@@ -69,22 +74,44 @@ app.use('/api', limiter);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+// Tenant isolation middleware - attach tenant info to all requests
+app.use(attachTenantInfo);
+
 // Swagger Documentation
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-// Database connection (optional - will work without MongoDB)
-const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/yoga_saas';
-if (process.env.SKIP_DB !== 'true') {
-  mongoose.connect(mongoUri, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  }).catch((err) => {
-    console.log('MongoDB not available, using in-memory storage');
-  });
-}
+// Database connection
+const connectDB = async () => {
+  const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/yoga_saas';
+  const skipDB = process.env.SKIP_DB === 'true';
+
+  if (skipDB) {
+    console.log('⚠️  SKIP_DB=true - Running without database (not for production!)');
+    return;
+  }
+
+  try {
+    await mongoose.connect(mongoUri, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+    console.log('✅ MongoDB connected successfully');
+  } catch (err) {
+    console.error('❌ MongoDB connection error:', err.message);
+    if (process.env.NODE_ENV === 'production') {
+      console.error('FATAL: Database is required in production. Exiting...');
+      process.exit(1);
+    } else {
+      console.log('⚠️  Running without database in development mode');
+    }
+  }
+};
+
+connectDB();
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/wix-auth', require('./routes/wix-auth')); // Wix authentication endpoints
 app.use('/api/users', require('./routes/users'));
 app.use('/api/yoga-plans', require('./routes/yoga-plans'));
 app.use('/api/ai', require('./routes/ai-generation'));

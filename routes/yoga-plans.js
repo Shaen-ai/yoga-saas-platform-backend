@@ -1,8 +1,12 @@
 const express = require('express');
 const router = express.Router();
+const { addTenantFilter, addTenantToData } = require('../middleware/tenantMiddleware');
 
-// Mock yoga plans
-const mockPlans = [
+// In-memory storage for yoga plans per tenant
+const plansStore = new Map();
+
+// Default mock yoga plans
+const defaultMockPlans = [
   {
     id: 'plan-1',
     userId: 'user-1',
@@ -169,6 +173,9 @@ router.post('/generate', async (req, res) => {
     - Frequency: ${formData.frequency} times per week
     - Preferences: ${formData.preferences}`;
     
+    const tenantKey = req.tenantKey || 'default';
+    const mockPlans = plansStore.get(tenantKey) || [...defaultMockPlans];
+
     // Here you would call OpenAI or Claude API
     // For now, generating a structured plan
     const newPlan = {
@@ -182,10 +189,12 @@ router.post('/generate', async (req, res) => {
       status: 'pending_approval',
       aiGenerated: true,
       createdAt: new Date(),
-      requiresApproval: true
+      requiresApproval: true,
+      tenantKey
     };
-    
+
     mockPlans.push(newPlan);
+    plansStore.set(tenantKey, mockPlans);
     
     // Notify admin about new plan pending approval
     console.log(`New plan ${newPlan.id} pending approval for user ${userId}`);
@@ -261,6 +270,9 @@ router.post('/generate-ai', async (req, res) => {
     - Frequency: ${formData.frequency} times per week
     - Preferences: ${formData.preferences}`;
 
+    const tenantKey = req.tenantKey || 'default';
+    const mockPlans = plansStore.get(tenantKey) || [...defaultMockPlans];
+
     // Generate a structured plan
     const newPlan = {
       id: `plan-${Date.now()}`,
@@ -273,10 +285,12 @@ router.post('/generate-ai', async (req, res) => {
       status: 'pending_approval',
       aiGenerated: true,
       createdAt: new Date(),
-      requiresApproval: true
+      requiresApproval: true,
+      tenantKey
     };
 
     mockPlans.push(newPlan);
+    plansStore.set(tenantKey, mockPlans);
 
     res.json({
       success: true,
@@ -294,15 +308,20 @@ router.post('/generate-ai', async (req, res) => {
 
 // Approve/reject plan
 router.put('/:id/approve', (req, res) => {
+  const tenantKey = req.tenantKey || 'default';
+  const mockPlans = plansStore.get(tenantKey) || [...defaultMockPlans];
   const plan = mockPlans.find(p => p.id === req.params.id);
   if (!plan) {
     return res.status(404).json({ error: 'Plan not found' });
   }
-  
+
   plan.status = req.body.approved ? 'approved' : 'rejected';
   plan.reviewedAt = new Date();
   plan.reviewedBy = req.body.reviewerId || 'instructor-1';
-  
+  plan.tenantKey = tenantKey;
+
+  plansStore.set(tenantKey, mockPlans);
+
   res.json({
     message: `Plan ${plan.status}`,
     plan
@@ -310,4 +329,5 @@ router.put('/:id/approve', (req, res) => {
 });
 
 module.exports = router;
-module.exports.mockPlans = mockPlans;
+module.exports.plansStore = plansStore;
+module.exports.defaultMockPlans = defaultMockPlans;

@@ -1,8 +1,12 @@
 const express = require('express');
 const router = express.Router();
+const { addTenantFilter, addTenantToData } = require('../middleware/tenantMiddleware');
 
-// In-memory storage for settings
-let globalSettings = {
+// In-memory storage for settings per tenant
+const settingsStore = new Map();
+
+// Default settings template
+const defaultSettings = {
   uiPreferences: {
     clickAction: 'popup', // 'popup' or 'tooltip'
     theme: 'light',
@@ -52,23 +56,34 @@ let globalSettings = {
   }
 };
 
-// Get all settings
+// Get all settings for the current tenant
 router.get('/', (req, res) => {
-  res.json(globalSettings);
+  const tenantKey = req.tenantKey || 'default';
+  const tenantSettings = settingsStore.get(tenantKey) || { ...defaultSettings };
+  res.json(tenantSettings);
 });
 
-// Update settings
+// Update settings for the current tenant
 router.put('/', (req, res) => {
-  globalSettings = {
-    ...globalSettings,
+  const tenantKey = req.tenantKey || 'default';
+  const currentSettings = settingsStore.get(tenantKey) || { ...defaultSettings };
+
+  const updatedSettings = {
+    ...currentSettings,
     ...req.body,
-    updatedAt: new Date()
+    updatedAt: new Date(),
+    tenantKey
   };
-  res.json(globalSettings);
+
+  settingsStore.set(tenantKey, updatedSettings);
+  res.json(updatedSettings);
 });
 
 // Special endpoint for UI preferences used by settings panel
 router.get('/ui-preferences', (req, res) => {
+  const tenantKey = req.tenantKey || 'default';
+  const globalSettings = settingsStore.get(tenantKey) || { ...defaultSettings };
+
   // Return settings in the format expected by the settings panel
   const panelSettings = {
     layout: {
@@ -124,6 +139,9 @@ router.get('/ui-preferences', (req, res) => {
 });
 
 router.post('/ui-preferences', (req, res) => {
+  const tenantKey = req.tenantKey || 'default';
+  const globalSettings = settingsStore.get(tenantKey) || { ...defaultSettings };
+
   // Update settings from the UI panel
   if (req.body.layout) {
     globalSettings.widget = {
@@ -165,11 +183,17 @@ router.post('/ui-preferences', (req, res) => {
   }
 
   globalSettings.updatedAt = new Date();
+  globalSettings.tenantKey = tenantKey;
+
+  settingsStore.set(tenantKey, globalSettings);
   res.json({ success: true, settings: globalSettings });
 });
 
 // Widget-specific configuration endpoint
 router.get('/widget-config', (req, res) => {
+  const tenantKey = req.tenantKey || 'default';
+  const globalSettings = settingsStore.get(tenantKey) || { ...defaultSettings };
+
   res.json({
     general: {
       title: globalSettings.widget?.title || 'Yoga Classes & Events',
@@ -196,6 +220,9 @@ router.get('/widget-config', (req, res) => {
 });
 
 router.post('/widget-config', (req, res) => {
+  const tenantKey = req.tenantKey || 'default';
+  const globalSettings = settingsStore.get(tenantKey) || { ...defaultSettings };
+
   // Update widget-specific settings
   if (req.body.general) {
     globalSettings.uiPreferences.language = req.body.general.language || globalSettings.uiPreferences.language;
@@ -224,12 +251,19 @@ router.post('/widget-config', (req, res) => {
     };
     globalSettings.notifications.emailEnabled = req.body.features.enableNotifications || false;
   }
-  
+
+  globalSettings.updatedAt = new Date();
+  globalSettings.tenantKey = tenantKey;
+  settingsStore.set(tenantKey, globalSettings);
+
   res.json({ success: true, message: 'Widget configuration updated' });
 });
 
 // Get specific setting category - MUST BE AFTER SPECIFIC ROUTES
 router.get('/:category', (req, res) => {
+  const tenantKey = req.tenantKey || 'default';
+  const globalSettings = settingsStore.get(tenantKey) || { ...defaultSettings };
+
   const category = globalSettings[req.params.category];
   if (!category) {
     return res.status(404).json({ error: 'Setting category not found' });
@@ -239,15 +273,22 @@ router.get('/:category', (req, res) => {
 
 // Update specific setting category
 router.put('/:category', (req, res) => {
+  const tenantKey = req.tenantKey || 'default';
+  const globalSettings = settingsStore.get(tenantKey) || { ...defaultSettings };
+
   if (!globalSettings[req.params.category]) {
     return res.status(404).json({ error: 'Setting category not found' });
   }
-  
+
   globalSettings[req.params.category] = {
     ...globalSettings[req.params.category],
     ...req.body
   };
-  
+
+  globalSettings.updatedAt = new Date();
+  globalSettings.tenantKey = tenantKey;
+  settingsStore.set(tenantKey, globalSettings);
+
   res.json(globalSettings[req.params.category]);
 });
 

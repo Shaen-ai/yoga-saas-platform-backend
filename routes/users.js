@@ -1,12 +1,15 @@
 const express = require('express');
 const router = express.Router();
+const { addTenantFilter, addTenantToData } = require('../middleware/tenantMiddleware');
 
-// In-memory storage for users (in production, this would be a database)
-let users = [];
+// In-memory storage for users per tenant (in production, this would be a database)
+const usersStore = new Map();
 
 // Get all users
 router.get('/', (req, res) => {
   const { role } = req.query;
+  const tenantKey = req.tenantKey || 'default';
+  const users = usersStore.get(tenantKey) || [];
 
   let filteredUsers = [...users];
 
@@ -23,6 +26,8 @@ router.get('/', (req, res) => {
 
 // Get user by ID
 router.get('/:id', (req, res) => {
+  const tenantKey = req.tenantKey || 'default';
+  const users = usersStore.get(tenantKey) || [];
   const user = users.find(u => u.id === req.params.id);
   if (!user) {
     return res.status(404).json({ error: 'User not found' });
@@ -39,6 +44,9 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: 'Name and email are required' });
   }
 
+  const tenantKey = req.tenantKey || 'default';
+  const users = usersStore.get(tenantKey) || [];
+
   // Check if user with this email already exists
   const existingUser = users.find(u => u.email === email);
   if (existingUser) {
@@ -54,7 +62,8 @@ router.post('/', (req, res) => {
     phone: phone || '',
     bio: bio || '',
     createdAt: new Date(),
-    status: 'active'
+    status: 'active',
+    tenantKey
   };
 
   // Add instructor-specific fields if role is instructor
@@ -69,6 +78,7 @@ router.post('/', (req, res) => {
   }
 
   users.push(newUser);
+  usersStore.set(tenantKey, users);
 
   res.status(201).json({
     message: 'User created successfully',
@@ -78,21 +88,25 @@ router.post('/', (req, res) => {
 
 // Update user
 router.put('/:id', (req, res) => {
+  const tenantKey = req.tenantKey || 'default';
+  const users = usersStore.get(tenantKey) || [];
   const userIndex = users.findIndex(u => u.id === req.params.id);
   if (userIndex === -1) {
     return res.status(404).json({ error: 'User not found' });
   }
 
-  // Preserve the ID and createdAt
+  // Preserve the ID, createdAt, and tenantKey
   const updatedUser = {
     ...users[userIndex],
     ...req.body,
     id: users[userIndex].id,
     createdAt: users[userIndex].createdAt,
+    tenantKey,
     updatedAt: new Date()
   };
 
   users[userIndex] = updatedUser;
+  usersStore.set(tenantKey, users);
 
   res.json({
     message: 'User updated successfully',
@@ -102,12 +116,15 @@ router.put('/:id', (req, res) => {
 
 // Delete user
 router.delete('/:id', (req, res) => {
+  const tenantKey = req.tenantKey || 'default';
+  const users = usersStore.get(tenantKey) || [];
   const userIndex = users.findIndex(u => u.id === req.params.id);
   if (userIndex === -1) {
     return res.status(404).json({ error: 'User not found' });
   }
 
   const deletedUser = users.splice(userIndex, 1)[0];
+  usersStore.set(tenantKey, users);
   res.json({
     message: 'User deleted successfully',
     user: deletedUser
@@ -116,6 +133,8 @@ router.delete('/:id', (req, res) => {
 
 // Get user statistics
 router.get('/stats/overview', (req, res) => {
+  const tenantKey = req.tenantKey || 'default';
+  const users = usersStore.get(tenantKey) || [];
   const stats = {
     totalUsers: users.length,
     members: users.filter(u => u.role === 'member').length,
@@ -135,6 +154,8 @@ router.get('/stats/overview', (req, res) => {
 
 // Search users
 router.get('/search/:query', (req, res) => {
+  const tenantKey = req.tenantKey || 'default';
+  const users = usersStore.get(tenantKey) || [];
   const query = req.params.query.toLowerCase();
   const searchResults = users.filter(u =>
     u.name.toLowerCase().includes(query) ||
@@ -149,4 +170,4 @@ router.get('/search/:query', (req, res) => {
 });
 
 module.exports = router;
-module.exports.users = users;
+module.exports.usersStore = usersStore;
