@@ -53,7 +53,7 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID', 'X-Wix-Comp-Id', 'X-Wix-Instance']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID', 'X-User-ID', 'X-Wix-Comp-Id', 'X-Wix-Instance']
 }));
 
 // Rate limiting with higher limits for development

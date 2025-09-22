@@ -76,6 +76,8 @@ const defaultMockPlans = [
  */
 router.get('/', (req, res) => {
   const { status } = req.query;
+  const tenantKey = req.tenantKey || 'default';
+  const mockPlans = plansStore.get(tenantKey) || [...defaultMockPlans];
 
   let filteredPlans = mockPlans;
 
@@ -115,6 +117,8 @@ router.get('/', (req, res) => {
  *         description: Plan not found
  */
 router.get('/:id', (req, res) => {
+  const tenantKey = req.tenantKey || 'default';
+  const mockPlans = plansStore.get(tenantKey) || [...defaultMockPlans];
   const plan = mockPlans.find(p => p.id === req.params.id);
   if (!plan) {
     return res.status(404).json({ error: 'Plan not found' });
@@ -152,6 +156,8 @@ router.get('/:id', (req, res) => {
  *                   type: number
  */
 router.get('/user/:userId', (req, res) => {
+  const tenantKey = req.tenantKey || 'default';
+  const mockPlans = plansStore.get(tenantKey) || [...defaultMockPlans];
   const userPlans = mockPlans.filter(p => p.userId === req.params.userId);
   res.json({
     plans: userPlans,

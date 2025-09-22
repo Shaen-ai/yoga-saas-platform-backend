@@ -269,6 +269,33 @@ router.put('/mark-all-read', (req, res) => {
 
 /**
  * @swagger
+ * /api/notifications/clear-all:
+ *   delete:
+ *     tags: [Notifications]
+ *     summary: Clear all notifications for user
+ */
+router.delete('/clear-all', (req, res) => {
+  const userId = req.headers['x-user-id'] || 'user-1';
+  const initialLength = mockNotifications.length;
+
+  // Remove all notifications for this user
+  const index = mockNotifications.findIndex(n => n.userId === userId);
+  while (index !== -1) {
+    mockNotifications.splice(index, 1);
+    const nextIndex = mockNotifications.findIndex(n => n.userId === userId);
+    if (nextIndex === -1) break;
+  }
+
+  const removedCount = initialLength - mockNotifications.length;
+
+  res.json({
+    message: 'All notifications cleared',
+    removedCount
+  });
+});
+
+/**
+ * @swagger
  * /api/notifications/email:
  *   post:
  *     tags: [Notifications]
