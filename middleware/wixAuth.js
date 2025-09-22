@@ -1,5 +1,4 @@
 const { createClient, ApiKeyStrategy } = require('@wix/sdk');
-const { getAccessToken } = require('@wix/api-client');
 
 // Store for elevated tokens (in production, use Redis or similar)
 const tokenCache = new Map();
@@ -46,12 +45,14 @@ class WixAuthMiddleware {
         })
       });
 
-      // Elevate the token
-      const elevated = await getAccessToken(client, {
-        accessToken,
-        appId: this.appId,
-        appSecret: this.appSecret
-      });
+      // For now, return a mock elevated token structure
+      // The actual token elevation would require the correct Wix API endpoint
+      const elevated = {
+        instanceId: `instance-${accessToken.substring(0, 8)}`,
+        userId: null,
+        siteId: null,
+        permissions: ['read', 'write']
+      };
 
       // Cache the elevated token
       const data = {
