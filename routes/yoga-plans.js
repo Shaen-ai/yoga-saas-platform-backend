@@ -5,52 +5,8 @@ const { addTenantFilter, addTenantToData } = require('../middleware/tenantMiddle
 // In-memory storage for yoga plans per tenant
 const plansStore = new Map();
 
-// Default mock yoga plans
-const defaultMockPlans = [
-  {
-    id: 'plan-1',
-    userId: 'user-1',
-    name: 'Beginner Morning Flow',
-    duration: '4 weeks',
-    difficulty: 'beginner',
-    sessions: [
-      { day: 1, poses: ['Mountain Pose', 'Downward Dog', 'Child\'s Pose'], duration: 15 },
-      { day: 2, poses: ['Sun Salutation A', 'Warrior I', 'Tree Pose'], duration: 20 }
-    ],
-    status: 'active'
-  },
-  {
-    id: 'plan-2',
-    userId: 'user-2',
-    name: 'Intermediate Strength Building',
-    duration: '6 weeks',
-    difficulty: 'intermediate',
-    sessions: [
-      { day: 1, poses: ['Plank', 'Chaturanga', 'Warrior III'], duration: 30 },
-      { day: 2, poses: ['Crow Pose', 'Side Plank', 'Boat Pose'], duration: 35 }
-    ],
-    status: 'approved',
-    reviewedAt: new Date('2025-09-14T18:30:46.037Z'),
-    reviewedBy: 'admin'
-  },
-  {
-    id: 'plan-3',
-    userId: 'user-1',
-    name: 'Advanced Power Flow',
-    duration: '8 weeks',
-    difficulty: 'advanced',
-    sessions: [
-      { day: 1, poses: ['Handstand', 'Scorpion Pose', 'Flying Pigeon'], duration: 45 },
-      { day: 2, poses: ['Crow Pose', 'Eight-Angle Pose', 'Firefly'], duration: 50 }
-    ],
-    status: 'pending_approval',
-    experience: 'advanced',
-    goals: ['strength', 'flexibility', 'balance'],
-    availableTime: 45,
-    frequency: 4,
-    createdAt: new Date()
-  }
-];
+// Default mock yoga plans - starting empty to avoid showing test data
+const defaultMockPlans = [];
 
 /**
  * @swagger

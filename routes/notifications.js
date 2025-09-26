@@ -2,53 +2,8 @@ const express = require('express');
 const router = express.Router();
 const nodemailer = require('nodemailer');
 
-// Mock notifications data
-const mockNotifications = [
-  {
-    id: 'notif-1',
-    userId: 'user-1',
-    type: 'class_reminder',
-    title: 'Upcoming Yoga Class',
-    message: 'Your Vinyasa Flow class with Sarah starts in 1 hour',
-    status: 'unread',
-    priority: 'high',
-    createdAt: new Date('2025-09-21T10:00:00'),
-    scheduledFor: new Date('2025-09-21T11:00:00'),
-    data: {
-      classId: 'class-1',
-      instructorName: 'Sarah Johnson',
-      classType: 'Vinyasa Flow'
-    }
-  },
-  {
-    id: 'notif-2',
-    userId: 'user-1',
-    type: 'payment_success',
-    title: 'Payment Successful',
-    message: 'Your monthly subscription has been renewed',
-    status: 'read',
-    priority: 'normal',
-    createdAt: new Date('2025-09-01T00:00:00'),
-    data: {
-      amount: 59.99,
-      subscriptionId: 'sub-1'
-    }
-  },
-  {
-    id: 'notif-3',
-    userId: 'user-2',
-    type: 'plan_approved',
-    title: 'Yoga Plan Approved',
-    message: 'Your personalized yoga plan has been approved by an instructor',
-    status: 'unread',
-    priority: 'normal',
-    createdAt: new Date('2025-09-20T14:30:00'),
-    data: {
-      planId: 'plan-2',
-      instructorName: 'Michael Chen'
-    }
-  }
-];
+// Notifications storage - starts empty to avoid showing test data
+const mockNotifications = [];
 
 // Email templates
 const emailTemplates = {

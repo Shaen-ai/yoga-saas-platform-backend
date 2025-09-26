@@ -42,7 +42,7 @@ const defaultSettings = {
     frequency: 'daily'
   },
   widget: {
-    title: 'Yoga Classes & Events',
+    title: 'Classes & Events',
     autoStart: true,
     showWelcome: true,
     defaultView: 'calendar',
@@ -53,6 +53,11 @@ const defaultSettings = {
     highContrast: false,
     reduceMotion: false,
     screenReader: false
+  },
+  eventCategories: {
+    default: [],
+    custom: [],
+    showCategoryFilter: true
   }
 };
 
@@ -95,7 +100,7 @@ router.get('/ui-preferences', (req, res) => {
       showCalendarHeader: true,
       showHeader: globalSettings.widget?.showHeader !== false,
       showMainHeader: true,
-      headerTitle: globalSettings.widget?.title || 'Yoga Classes',
+      headerTitle: globalSettings.widget?.title || 'Classes',
       showFooter: globalSettings.widget?.showFooter || false,
       compactMode: globalSettings.uiPreferences?.compactMode || false,
       showCreatePlanOption: true,
@@ -196,8 +201,8 @@ router.get('/widget-config', (req, res) => {
 
   res.json({
     general: {
-      title: globalSettings.widget?.title || 'Yoga Classes & Events',
-      siteName: globalSettings.widget?.siteName || 'Yoga Studio',
+      title: globalSettings.widget?.title || 'Classes & Events',
+      siteName: globalSettings.widget?.siteName || '',
       language: globalSettings.uiPreferences?.language || 'en',
       timezone: globalSettings.calendar?.timezone || 'UTC',
       dateFormat: globalSettings.calendar?.dateFormat || 'MM/DD/YYYY'
