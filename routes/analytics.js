@@ -1,8 +1,7 @@
 const express = require('express');
 const router = express.Router();
-
-// Import yoga plans to get pending count
-const yogaPlansRouter = require('./yoga-plans');
+const Event = require('../models/Event');
+const YogaPlan = require('../models/YogaPlan');
 
 // Get dashboard analytics
 router.get('/dashboard', async (req, res) => {
@@ -12,25 +11,85 @@ router.get('/dashboard', async (req, res) => {
     const startOfWeek = new Date(today);
     startOfWeek.setDate(today.getDate() - today.getDay());
 
-    // Get actual data from in-memory stores
-    const plansStore = require('./yoga-plans').plansStore;
-    const eventsStore = require('./events').eventsStore;
-    const usersStore = require('./users').usersStore;
-
     const tenantKey = req.tenantKey || 'default';
-    const plans = plansStore.get(tenantKey) || [];
-    const events = eventsStore.get(tenantKey) || [];
+
+    // Get actual data from MongoDB
+    const plans = await YogaPlan.find({ tenantKey });
+    const events = await Event.find({ tenantKey });
+
+    // Get users from in-memory store (will be replaced when User model is created)
+    const usersStore = require('./users').usersStore;
     const users = usersStore.get(tenantKey) || [];
+
+    // Calculate unique participants from events (these are the actual "active members")
+    const uniqueParticipants = new Set();
+    events.forEach(event => {
+      if (event.participants && Array.isArray(event.participants)) {
+        event.participants.forEach(participant => {
+          // Use email or userId as unique identifier
+          const identifier = participant.email || participant.userId || participant.name;
+          if (identifier) {
+            uniqueParticipants.add(identifier);
+          }
+        });
+      }
+    });
+
+    // Debug logging
+    console.log('Analytics - Tenant Key:', tenantKey);
+    console.log('Analytics - Registered users in usersStore:', users.length);
+    console.log('Analytics - Unique event participants:', uniqueParticipants.size);
+    console.log('Analytics - Events found:', events.length);
 
     // Calculate real counts
     const pendingCount = plans.filter(plan => plan.status === 'pending_approval').length;
     const totalPlans = plans.length;
     const totalEvents = events.length;
-    const totalUsers = users.length;
+    // Count both registered users AND unique event participants as "Active Members"
+    const totalUsers = Math.max(users.length, uniqueParticipants.size);
 
     // Calculate some mock revenue based on events
     const baseRevenue = events.length * 50; // $50 per event average
     const weekRevenue = Math.min(events.length * 250, 5400); // Cap at 5400 for demo
+
+    // Calculate attendance rate for last 30 days and previous 30 days
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now);
+    thirtyDaysAgo.setDate(now.getDate() - 30);
+    const sixtyDaysAgo = new Date(now);
+    sixtyDaysAgo.setDate(now.getDate() - 60);
+
+    // Filter events for last 30 days
+    const last30DaysEvents = events.filter(event => {
+      const eventDate = new Date(event.start);
+      return eventDate <= now && eventDate >= thirtyDaysAgo;
+    });
+
+    // Filter events for 30-60 days ago
+    const previous30DaysEvents = events.filter(event => {
+      const eventDate = new Date(event.start);
+      return eventDate < thirtyDaysAgo && eventDate >= sixtyDaysAgo;
+    });
+
+    // Calculate attendance rate for last 30 days
+    const calculateAttendanceRate = (eventsList) => {
+      if (eventsList.length === 0) return 0;
+
+      let totalAttended = 0;
+      let totalCapacity = 0;
+
+      eventsList.forEach(event => {
+        const participants = event.participants?.length || 0;
+        const capacity = event.maxParticipants || 20;
+        totalAttended += participants;
+        totalCapacity += capacity;
+      });
+
+      return totalCapacity > 0 ? Math.round((totalAttended / totalCapacity) * 100) : 0;
+    };
+
+    const currentAttendanceRate = calculateAttendanceRate(last30DaysEvents);
+    const previousAttendanceRate = calculateAttendanceRate(previous30DaysEvents);
 
     const analytics = {
       totalUsers: totalUsers,
@@ -43,13 +102,14 @@ router.get('/dashboard', async (req, res) => {
         sessions: events.length,
         bookings: events.length * 3,
         revenue: baseRevenue,
-        attendance: 0
+        attendance: currentAttendanceRate
       },
       weekStats: {
         totalSessions: events.length * 2,
         totalBookings: events.length * 5,
         totalRevenue: weekRevenue,
-        avgAttendance: 0
+        avgAttendance: currentAttendanceRate,
+        previousAttendance: previousAttendanceRate
       }
     };
     

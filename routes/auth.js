@@ -154,31 +154,55 @@ router.post('/login', async (req, res) => {
 router.post('/signup', async (req, res) => {
   try {
     const { email, password, name } = req.body;
-    
+
     if (users.has(email)) {
       return res.status(400).json({ error: 'User already exists' });
     }
-    
+
     const hashedPassword = await bcrypt.hash(password, 10);
     const userId = `user-${Date.now()}`;
-    
+    const tenantKey = req.tenantKey || 'default';
+
     const user = {
       id: userId,
       name,
       email,
       password: hashedPassword,
       role: 'member',
-      createdAt: new Date()
+      createdAt: new Date(),
+      status: 'active',
+      tenantKey
     };
-    
+
+    // Store in auth users Map
     users.set(email, user);
-    
+
+    // Also add to usersStore for analytics/dashboard
+    const usersStore = require('./users').usersStore;
+    const tenantUsers = usersStore.get(tenantKey) || [];
+
+    // Check if user already exists in tenant store
+    if (!tenantUsers.find(u => u.email === email)) {
+      tenantUsers.push({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+        createdAt: user.createdAt,
+        tenantKey: user.tenantKey
+      });
+      usersStore.set(tenantKey, tenantUsers);
+      console.log('Signup - User added to usersStore:', user.email, 'tenantKey:', tenantKey);
+      console.log('Signup - Total users in store:', tenantUsers.length);
+    }
+
     const token = jwt.sign(
       { userId: user.id, role: user.role },
       process.env.JWT_SECRET || 'dev-secret-key',
       { expiresIn: '7d' }
     );
-    
+
     res.status(201).json({
       message: 'User created successfully',
       token,

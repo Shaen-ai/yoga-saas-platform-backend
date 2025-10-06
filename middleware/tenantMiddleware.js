@@ -44,7 +44,13 @@ const attachTenantInfo = (req, res, next) => {
 
   // Create a unique tenant key for database operations
   if (tenantInfo.compId && tenantInfo.instance) {
-    req.tenantKey = `${tenantInfo.compId}:${tenantInfo.instance}`;
+    // If both compId and instance are 'default', use 'default' as tenant key
+    // to maintain compatibility with dashboard
+    if (tenantInfo.compId === 'default' && tenantInfo.instance === 'default') {
+      req.tenantKey = 'default';
+    } else {
+      req.tenantKey = `${tenantInfo.compId}:${tenantInfo.instance}`;
+    }
   } else if (tenantInfo.tenantId) {
     req.tenantKey = tenantInfo.tenantId;
   } else {
