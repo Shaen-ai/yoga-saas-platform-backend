@@ -111,7 +111,6 @@ connectDB();
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));
-app.use('/api/wix-auth', require('./routes/wix-auth')); // Wix authentication endpoints
 app.use('/api/users', require('./routes/users'));
 app.use('/api/yoga-plans', require('./routes/yoga-plans'));
 app.use('/api/ai', require('./routes/ai-generation'));
@@ -119,10 +118,6 @@ app.use('/api/events', require('./routes/events'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/payment-settings', require('./routes/payment-settings'));
-app.use('/api/instructors', require('./routes/instructors'));
-app.use('/api/subscriptions', require('./routes/subscriptions'));
-app.use('/api/notifications', require('./routes/notifications'));
-app.use('/api/reviews', require('./routes/reviews'));
 
 /**
  * @swagger

@@ -131,43 +131,5 @@ router.delete('/:id', (req, res) => {
   });
 });
 
-// Get user statistics
-router.get('/stats/overview', (req, res) => {
-  const tenantKey = req.tenantKey || 'default';
-  const users = usersStore.get(tenantKey) || [];
-  const stats = {
-    totalUsers: users.length,
-    members: users.filter(u => u.role === 'member').length,
-    instructors: users.filter(u => u.role === 'instructor').length,
-    admins: users.filter(u => u.role === 'admin').length,
-    activeUsers: users.filter(u => u.status === 'active').length,
-    newThisMonth: users.filter(u => {
-      const userDate = new Date(u.createdAt);
-      const now = new Date();
-      return userDate.getMonth() === now.getMonth() &&
-             userDate.getFullYear() === now.getFullYear();
-    }).length
-  };
-
-  res.json(stats);
-});
-
-// Search users
-router.get('/search/:query', (req, res) => {
-  const tenantKey = req.tenantKey || 'default';
-  const users = usersStore.get(tenantKey) || [];
-  const query = req.params.query.toLowerCase();
-  const searchResults = users.filter(u =>
-    u.name.toLowerCase().includes(query) ||
-    u.email.toLowerCase().includes(query) ||
-    (u.bio && u.bio.toLowerCase().includes(query))
-  );
-
-  res.json({
-    users: searchResults,
-    total: searchResults.length
-  });
-});
-
 module.exports = router;
 module.exports.usersStore = usersStore;

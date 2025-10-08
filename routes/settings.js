@@ -1,11 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const { addTenantFilter, addTenantToData } = require('../middleware/tenantMiddleware');
+const Settings = require('../models/Settings');
 
-// In-memory storage for settings per tenant
-const settingsStore = new Map();
-
-// Default settings template
+// Default settings template (used when values are not in DB)
 const defaultSettings = {
   uiPreferences: {
     clickAction: 'popup', // 'popup' or 'tooltip'
@@ -61,60 +59,44 @@ const defaultSettings = {
   }
 };
 
-// Get all settings for the current tenant
-router.get('/', (req, res) => {
-  const tenantKey = req.tenantKey || 'default';
-  const tenantSettings = settingsStore.get(tenantKey) || { ...defaultSettings };
-  res.json(tenantSettings);
-});
+// UI preferences endpoint for widget and settings panel
+router.get('/ui-preferences', async (req, res) => {
+  try {
+    const tenantKey = req.tenantKey || 'default';
+    console.log('GET /ui-preferences - Tenant:', tenantKey);
 
-// Update settings for the current tenant
-router.put('/', (req, res) => {
-  const tenantKey = req.tenantKey || 'default';
-  const currentSettings = settingsStore.get(tenantKey) || { ...defaultSettings };
+    // Load settings from DB
+    const savedSettings = await Settings.findOne({ tenantKey });
 
-  const updatedSettings = {
-    ...currentSettings,
-    ...req.body,
-    updatedAt: new Date(),
-    tenantKey
-  };
+    // Merge saved settings with defaults (defaults used when values not in DB)
+    const globalSettings = savedSettings ? savedSettings.toObject() : {};
 
-  settingsStore.set(tenantKey, updatedSettings);
-  res.json(updatedSettings);
-});
-
-// Special endpoint for UI preferences used by settings panel
-router.get('/ui-preferences', (req, res) => {
-  const tenantKey = req.tenantKey || 'default';
-  const globalSettings = settingsStore.get(tenantKey) || { ...defaultSettings };
-
-  // Return settings in the format expected by the settings panel
-  const panelSettings = {
+    // Return settings in the format expected by the settings panel
+    const panelSettings = {
     layout: {
       defaultView: globalSettings.widget?.defaultView || 'yogaClasses',
-      defaultMode: 'calendar',
-      defaultCalendarLayout: globalSettings.calendar?.defaultView || 'month',
-      calendarView: globalSettings.calendar?.defaultView || 'month',
-      showModeSwitcher: true,
-      showCalendarHeader: true,
+      defaultMode: globalSettings.layout?.defaultMode || 'calendar',
+      defaultCalendarLayout: globalSettings.layout?.defaultCalendarLayout || globalSettings.calendar?.defaultView || 'month',
+      calendarView: globalSettings.layout?.calendarView || globalSettings.calendar?.defaultView || 'month',
+      showModeSwitcher: globalSettings.layout?.showModeSwitcher !== false,
+      showCalendarHeader: globalSettings.layout?.showCalendarHeader !== false,
       showHeader: globalSettings.widget?.showHeader !== false,
-      showMainHeader: true,
+      showMainHeader: globalSettings.layout?.showMainHeader !== false,
       headerTitle: globalSettings.widget?.title || 'Classes',
       showFooter: globalSettings.widget?.showFooter || false,
       compactMode: globalSettings.uiPreferences?.compactMode || false,
-      showCreatePlanOption: true,
-      showYogaClassesOption: true,
-      showCalendarToggle: true,
-      showLanguageSelector: true,
-      showThemeToggle: true,
-      showSearchBar: true,
-      showFilters: true,
-      showInstructorInfo: globalSettings.widget?.showInstructor !== false,
-      showClassDuration: true,
-      showClassLevel: true,
-      showBookingButton: true,
-      showWaitlistOption: true
+      showCreatePlanOption: globalSettings.layout?.showCreatePlanOption !== false,
+      showYogaClassesOption: globalSettings.layout?.showYogaClassesOption !== false,
+      showCalendarToggle: globalSettings.layout?.showCalendarToggle !== false,
+      showLanguageSelector: globalSettings.layout?.showLanguageSelector !== false,
+      showThemeToggle: globalSettings.layout?.showThemeToggle !== false,
+      showSearchBar: globalSettings.layout?.showSearchBar !== false,
+      showFilters: globalSettings.layout?.showFilters !== false,
+      showInstructorInfo: globalSettings.layout?.showInstructorInfo !== false,
+      showClassDuration: globalSettings.layout?.showClassDuration !== false,
+      showClassLevel: globalSettings.layout?.showClassLevel !== false,
+      showBookingButton: globalSettings.layout?.showBookingButton !== false,
+      showWaitlistOption: globalSettings.layout?.showWaitlistOption !== false
     },
     appearance: {
       primaryColor: globalSettings.uiPreferences?.primaryColor || '#2563eb',
@@ -126,7 +108,7 @@ router.get('/ui-preferences', (req, res) => {
     },
     calendar: {
       weekStartsOn: globalSettings.calendar?.weekStartsOn || 'sunday',
-      timeFormat: '12h',
+      timeFormat: globalSettings.calendar?.timeFormat || '12h',
       showWeekNumbers: false,
       eventDisplay: 'block',
       minTime: '06:00',
@@ -138,163 +120,79 @@ router.get('/ui-preferences', (req, res) => {
       animationsEnabled: globalSettings.uiPreferences?.animations !== false,
       showTooltips: true,
       language: globalSettings.uiPreferences?.language || 'en'
+    },
+    uiPreferences: {
+      clickAction: globalSettings.uiPreferences?.clickAction || 'tooltip'
     }
   };
-  res.json(panelSettings);
+
+    console.log('GET /ui-preferences - Returning settings for tenant:', tenantKey);
+    res.json(panelSettings);
+  } catch (error) {
+    console.error('Error in /ui-preferences:', error);
+    res.status(500).json({ error: 'Failed to load UI preferences', message: error.message });
+  }
 });
 
-router.post('/ui-preferences', (req, res) => {
-  const tenantKey = req.tenantKey || 'default';
-  const globalSettings = settingsStore.get(tenantKey) || { ...defaultSettings };
+router.post('/ui-preferences', async (req, res) => {
+  try {
+    const tenantKey = req.tenantKey || 'default';
 
-  // Update settings from the UI panel
-  if (req.body.layout) {
-    globalSettings.widget = {
-      ...globalSettings.widget,
-      defaultView: req.body.layout.defaultView,
-      showHeader: req.body.layout.showHeader,
-      showFooter: req.body.layout.showFooter,
-      title: req.body.layout.headerTitle,
-      showInstructor: req.body.layout.showInstructorInfo
-    };
-    globalSettings.calendar = {
-      ...globalSettings.calendar,
-      defaultView: req.body.layout.calendarView
-    };
-    globalSettings.uiPreferences.compactMode = req.body.layout.compactMode;
-  }
-
-  if (req.body.appearance) {
-    globalSettings.uiPreferences = {
-      ...globalSettings.uiPreferences,
-      primaryColor: req.body.appearance.primaryColor,
-      fontSize: req.body.appearance.fontSize
-    };
-  }
-
-  if (req.body.calendar) {
-    globalSettings.calendar = {
-      ...globalSettings.calendar,
-      weekStartsOn: req.body.calendar.weekStartsOn
-    };
-  }
-
-  if (req.body.behavior) {
-    globalSettings.uiPreferences = {
-      ...globalSettings.uiPreferences,
-      animations: req.body.behavior.animationsEnabled,
-      language: req.body.behavior.language
-    };
-  }
-
-  globalSettings.updatedAt = new Date();
-  globalSettings.tenantKey = tenantKey;
-
-  settingsStore.set(tenantKey, globalSettings);
-  res.json({ success: true, settings: globalSettings });
-});
-
-// Widget-specific configuration endpoint
-router.get('/widget-config', (req, res) => {
-  const tenantKey = req.tenantKey || 'default';
-  const globalSettings = settingsStore.get(tenantKey) || { ...defaultSettings };
-
-  res.json({
-    general: {
-      title: globalSettings.widget?.title || 'Classes & Events',
-      siteName: globalSettings.widget?.siteName || '',
-      language: globalSettings.uiPreferences?.language || 'en',
-      timezone: globalSettings.calendar?.timezone || 'UTC',
-      dateFormat: globalSettings.calendar?.dateFormat || 'MM/DD/YYYY'
-    },
-    appearance: {
-      primaryColor: globalSettings.uiPreferences?.primaryColor || '#116DFF',
-      layout: globalSettings.widget?.defaultView || 'grid',
-      theme: globalSettings.uiPreferences?.theme || 'light',
-      showHeader: globalSettings.widget?.showHeader !== false,
-      showFooter: globalSettings.widget?.showFooter !== false
-    },
-    features: {
-      enableBooking: globalSettings.widget?.enableBooking !== false,
-      enablePayments: globalSettings.widget?.enablePayments !== false,
-      enableNotifications: globalSettings.notifications?.emailEnabled || false,
-      enableAnalytics: globalSettings.widget?.enableAnalytics || false,
-      maxBookingsPerUser: globalSettings.widget?.maxBookingsPerUser || 5
+    // Load existing settings from DB or create new
+    let settings = await Settings.findOne({ tenantKey });
+    if (!settings) {
+      settings = new Settings({ tenantKey });
     }
-  });
-});
 
-router.post('/widget-config', (req, res) => {
-  const tenantKey = req.tenantKey || 'default';
-  const globalSettings = settingsStore.get(tenantKey) || { ...defaultSettings };
+    // Only update individual fields that are provided (only store edited values)
+    if (req.body.layout) {
+      if (!settings.layout) settings.layout = {};
+      Object.keys(req.body.layout).forEach(key => {
+        settings.layout[key] = req.body.layout[key];
+      });
+      settings.markModified('layout');
+    }
 
-  // Update widget-specific settings
-  if (req.body.general) {
-    globalSettings.uiPreferences.language = req.body.general.language || globalSettings.uiPreferences.language;
-    globalSettings.widget = {
-      ...globalSettings.widget,
-      title: req.body.general.title || globalSettings.widget.title,
-      siteName: req.body.general.siteName
-    };
+    if (req.body.appearance) {
+      if (!settings.appearance) settings.appearance = {};
+      Object.keys(req.body.appearance).forEach(key => {
+        settings.appearance[key] = req.body.appearance[key];
+      });
+      settings.markModified('appearance');
+    }
+
+    if (req.body.uiPreferences) {
+      if (!settings.uiPreferences) settings.uiPreferences = {};
+      Object.keys(req.body.uiPreferences).forEach(key => {
+        settings.uiPreferences[key] = req.body.uiPreferences[key];
+      });
+      settings.markModified('uiPreferences');
+    }
+
+    if (req.body.calendar) {
+      if (!settings.calendar) settings.calendar = {};
+      Object.keys(req.body.calendar).forEach(key => {
+        settings.calendar[key] = req.body.calendar[key];
+      });
+      settings.markModified('calendar');
+    }
+
+    if (req.body.behavior) {
+      if (!settings.behavior) settings.behavior = {};
+      Object.keys(req.body.behavior).forEach(key => {
+        settings.behavior[key] = req.body.behavior[key];
+      });
+      settings.markModified('behavior');
+    }
+
+    // Save to MongoDB (only stores fields that have values)
+    await settings.save();
+
+    res.json({ success: true, settings });
+  } catch (error) {
+    console.error('Error saving settings:', error);
+    res.status(500).json({ error: 'Failed to save settings', message: error.message });
   }
-  
-  if (req.body.appearance) {
-    globalSettings.uiPreferences.primaryColor = req.body.appearance.primaryColor || globalSettings.uiPreferences.primaryColor;
-    globalSettings.uiPreferences.theme = req.body.appearance.theme || globalSettings.uiPreferences.theme;
-    globalSettings.widget = {
-      ...globalSettings.widget,
-      defaultView: req.body.appearance.layout,
-      showHeader: req.body.appearance.showHeader,
-      showFooter: req.body.appearance.showFooter
-    };
-  }
-  
-  if (req.body.features) {
-    globalSettings.widget = {
-      ...globalSettings.widget,
-      ...req.body.features
-    };
-    globalSettings.notifications.emailEnabled = req.body.features.enableNotifications || false;
-  }
-
-  globalSettings.updatedAt = new Date();
-  globalSettings.tenantKey = tenantKey;
-  settingsStore.set(tenantKey, globalSettings);
-
-  res.json({ success: true, message: 'Widget configuration updated' });
-});
-
-// Get specific setting category - MUST BE AFTER SPECIFIC ROUTES
-router.get('/:category', (req, res) => {
-  const tenantKey = req.tenantKey || 'default';
-  const globalSettings = settingsStore.get(tenantKey) || { ...defaultSettings };
-
-  const category = globalSettings[req.params.category];
-  if (!category) {
-    return res.status(404).json({ error: 'Setting category not found' });
-  }
-  res.json(category);
-});
-
-// Update specific setting category
-router.put('/:category', (req, res) => {
-  const tenantKey = req.tenantKey || 'default';
-  const globalSettings = settingsStore.get(tenantKey) || { ...defaultSettings };
-
-  if (!globalSettings[req.params.category]) {
-    return res.status(404).json({ error: 'Setting category not found' });
-  }
-
-  globalSettings[req.params.category] = {
-    ...globalSettings[req.params.category],
-    ...req.body
-  };
-
-  globalSettings.updatedAt = new Date();
-  globalSettings.tenantKey = tenantKey;
-  settingsStore.set(tenantKey, globalSettings);
-
-  res.json(globalSettings[req.params.category]);
 });
 
 module.exports = router;

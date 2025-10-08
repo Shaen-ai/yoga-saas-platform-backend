@@ -1,18 +1,18 @@
 const express = require('express');
 const router = express.Router();
 const { addTenantFilter, addTenantToData } = require('../middleware/tenantMiddleware');
-const YogaPlan = require('../models/YogaPlan');
+const Event = require('../models/Event');
 
 /**
  * @swagger
  * /api/yoga-plans:
  *   get:
  *     tags: [Yoga Plans]
- *     summary: Get all yoga plans
- *     description: Retrieve a list of all yoga plans
+ *     summary: Get all AI-generated events (formerly yoga plans)
+ *     description: Retrieve a list of all AI-generated events grouped by plan
  *     responses:
  *       200:
- *         description: List of yoga plans
+ *         description: List of yoga plans (as events)
  *         content:
  *           application/json:
  *             schema:
@@ -20,8 +20,6 @@ const YogaPlan = require('../models/YogaPlan');
  *               properties:
  *                 plans:
  *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/YogaPlan'
  *                 total:
  *                   type: number
  */
@@ -30,12 +28,52 @@ router.get('/', async (req, res) => {
     const { status } = req.query;
     const tenantKey = req.tenantKey || 'default';
 
-    const filter = { tenantKey };
+    const filter = {
+      tenantKey,
+      aiGenerated: true,
+      generatedFrom: 'yoga_plan'
+    };
+
     if (status) {
-      filter.status = status;
+      filter.approvalStatus = status;
     }
 
-    const plans = await YogaPlan.find(filter).sort({ createdAt: -1 });
+    // Get all AI-generated events
+    const events = await Event.find(filter).sort({ createdAt: -1 });
+
+    // Group events by planId to create "plans"
+    const plansMap = new Map();
+
+    events.forEach(event => {
+      const planId = event.planId || event._id.toString();
+
+      if (!plansMap.has(planId)) {
+        plansMap.set(planId, {
+          id: planId,
+          name: event.planName,
+          userId: event.planData?.userId,
+          formData: event.planData?.formData,
+          difficulty: event.planData?.difficulty || event.level,
+          duration: event.planData?.duration,
+          status: event.approvalStatus,
+          aiGenerated: true,
+          requiresApproval: true,
+          createdAt: event.createdAt,
+          sessions: event.planData?.sessions || [],
+          events: [],
+          rejectionReason: event.rejectionReason,
+          approvedBy: event.approvedBy,
+          approvedAt: event.approvedAt,
+          rejectedBy: event.rejectedBy,
+          rejectedAt: event.rejectedAt,
+          tenantKey
+        });
+      }
+
+      plansMap.get(planId).events.push(event);
+    });
+
+    const plans = Array.from(plansMap.values());
 
     res.json({
       plans,
@@ -53,7 +91,7 @@ router.get('/', async (req, res) => {
  *   get:
  *     tags: [Yoga Plans]
  *     summary: Get yoga plan by ID
- *     description: Retrieve a specific yoga plan by its ID
+ *     description: Retrieve a specific yoga plan by its planId (returns grouped events)
  *     parameters:
  *       - in: path
  *         name: id
@@ -64,21 +102,44 @@ router.get('/', async (req, res) => {
  *     responses:
  *       200:
  *         description: Yoga plan details
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/YogaPlan'
  *       404:
  *         description: Plan not found
  */
 router.get('/:id', async (req, res) => {
   try {
     const tenantKey = req.tenantKey || 'default';
-    const plan = await YogaPlan.findOne({ _id: req.params.id, tenantKey });
+    const events = await Event.find({
+      planId: req.params.id,
+      tenantKey,
+      aiGenerated: true,
+      generatedFrom: 'yoga_plan'
+    });
 
-    if (!plan) {
+    if (!events || events.length === 0) {
       return res.status(404).json({ error: 'Plan not found' });
     }
+
+    const firstEvent = events[0];
+    const plan = {
+      id: req.params.id,
+      name: firstEvent.planName,
+      userId: firstEvent.planData?.userId,
+      formData: firstEvent.planData?.formData,
+      difficulty: firstEvent.planData?.difficulty || firstEvent.level,
+      duration: firstEvent.planData?.duration,
+      status: firstEvent.approvalStatus,
+      aiGenerated: true,
+      requiresApproval: true,
+      createdAt: firstEvent.createdAt,
+      sessions: firstEvent.planData?.sessions || [],
+      events: events,
+      rejectionReason: firstEvent.rejectionReason,
+      approvedBy: firstEvent.approvedBy,
+      approvedAt: firstEvent.approvedAt,
+      rejectedBy: firstEvent.rejectedBy,
+      rejectedAt: firstEvent.rejectedAt,
+      tenantKey
+    };
 
     res.json(plan);
   } catch (error) {
@@ -93,7 +154,7 @@ router.get('/:id', async (req, res) => {
  *   get:
  *     tags: [Yoga Plans]
  *     summary: Get plans by user ID
- *     description: Retrieve all yoga plans for a specific user
+ *     description: Retrieve all yoga plans for a specific user (from events)
  *     parameters:
  *       - in: path
  *         name: userId
@@ -111,18 +172,52 @@ router.get('/:id', async (req, res) => {
  *               properties:
  *                 plans:
  *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/YogaPlan'
  *                 total:
  *                   type: number
  */
 router.get('/user/:userId', async (req, res) => {
   try {
     const tenantKey = req.tenantKey || 'default';
-    const userPlans = await YogaPlan.find({
-      userId: req.params.userId,
-      tenantKey
+    const events = await Event.find({
+      'planData.userId': req.params.userId,
+      tenantKey,
+      aiGenerated: true,
+      generatedFrom: 'yoga_plan'
     }).sort({ createdAt: -1 });
+
+    // Group events by planId
+    const plansMap = new Map();
+
+    events.forEach(event => {
+      const planId = event.planId || event._id.toString();
+
+      if (!plansMap.has(planId)) {
+        plansMap.set(planId, {
+          id: planId,
+          name: event.planName,
+          userId: event.planData?.userId,
+          formData: event.planData?.formData,
+          difficulty: event.planData?.difficulty || event.level,
+          duration: event.planData?.duration,
+          status: event.approvalStatus,
+          aiGenerated: true,
+          requiresApproval: true,
+          createdAt: event.createdAt,
+          sessions: event.planData?.sessions || [],
+          events: [],
+          rejectionReason: event.rejectionReason,
+          approvedBy: event.approvedBy,
+          approvedAt: event.approvedAt,
+          rejectedBy: event.rejectedBy,
+          rejectedAt: event.rejectedAt,
+          tenantKey
+        });
+      }
+
+      plansMap.get(planId).events.push(event);
+    });
+
+    const userPlans = Array.from(plansMap.values());
 
     res.json({
       plans: userPlans,
@@ -140,41 +235,45 @@ router.post('/generate', async (req, res) => {
     const { userId, formData } = req.body;
     const tenantKey = req.tenantKey || 'default';
 
-    // Generate a structured plan
-    const newPlan = new YogaPlan({
+    // Generate a unique plan ID
+    const mongoose = require('mongoose');
+    const planId = new mongoose.Types.ObjectId().toString();
+
+    // Create plan data structure
+    const planData = {
       userId,
       formData,
       name: `Personalized ${formData.experience || 'Beginner'} Yoga Plan`,
       duration: '4 weeks',
       difficulty: formData.experience || 'beginner',
       sessions: generateDetailedSessions(formData),
-      status: 'pending_approval',
-      aiGenerated: true,
-      requiresApproval: true,
-      tenantKey
-    });
-
-    await newPlan.save();
+    };
 
     // Notify admin about new plan pending approval
-    console.log(`New plan ${newPlan._id} pending approval for user ${userId}`);
+    console.log(`New plan ${planId} pending approval for user ${userId}`);
 
-    // Automatically create events from the plan with pending approval status
+    // Create events directly from the plan data
     try {
-      const eventsCreated = await createEventsFromPlan(newPlan, tenantKey);
-      console.log(`Created ${eventsCreated.length} recurring events from new plan ${newPlan._id} - awaiting approval`);
+      const eventsCreated = await createEventsFromPlanData(planId, planData, tenantKey);
+      console.log(`Created ${eventsCreated.length} recurring events from new plan ${planId} - awaiting approval`);
 
       res.json({
         message: 'Plan generated successfully and sent for approval',
-        plan: newPlan,
+        planId: planId,
+        plan: {
+          id: planId,
+          ...planData,
+          status: 'pending_approval',
+          aiGenerated: true,
+          requiresApproval: true,
+          tenantKey
+        },
         eventsCreated: eventsCreated.length
       });
     } catch (eventError) {
       console.error('Error creating events from plan:', eventError);
-      // Still return success for plan, but note event creation failed
-      res.json({
-        message: 'Plan generated but failed to create events',
-        plan: newPlan,
+      res.status(500).json({
+        message: 'Failed to create events',
         error: eventError.message
       });
     }
@@ -248,39 +347,44 @@ router.post('/generate-ai', async (req, res) => {
 
     const tenantKey = req.tenantKey || 'default';
 
-    // Generate a structured plan
-    const newPlan = new YogaPlan({
+    // Generate a unique plan ID
+    const mongoose = require('mongoose');
+    const planId = new mongoose.Types.ObjectId().toString();
+
+    // Create plan data structure
+    const planData = {
       userId,
       formData,
       name: `Personalized ${formData.experience} Yoga Plan`,
       duration: '4 weeks',
       difficulty: formData.experience || 'beginner',
       sessions: generateDetailedSessions(formData),
-      status: 'pending_approval',
-      aiGenerated: true,
-      requiresApproval: true,
-      tenantKey
-    });
+    };
 
-    await newPlan.save();
-
-    // Automatically create events from the plan with pending approval status
+    // Create events directly from the plan data
     try {
-      const eventsCreated = await createEventsFromPlan(newPlan, tenantKey);
-      console.log(`Created ${eventsCreated.length} events from new plan ${newPlan._id} - awaiting approval`);
+      const eventsCreated = await createEventsFromPlanData(planId, planData, tenantKey);
+      console.log(`Created ${eventsCreated.length} events from new plan ${planId} - awaiting approval`);
 
       res.json({
         success: true,
         message: 'Plan generated successfully and events created (pending approval)',
-        plan: newPlan,
+        planId: planId,
+        plan: {
+          id: planId,
+          ...planData,
+          status: 'pending_approval',
+          aiGenerated: true,
+          requiresApproval: true,
+          tenantKey
+        },
         eventsCreated: eventsCreated.length
       });
     } catch (error) {
       console.error('Error creating events from plan:', error);
-      res.json({
-        success: true,
-        message: 'Plan generated but failed to create events',
-        plan: newPlan,
+      res.status(500).json({
+        success: false,
+        message: 'Failed to create events',
         error: error.message
       });
     }
@@ -293,27 +397,57 @@ router.post('/generate-ai', async (req, res) => {
   }
 });
 
-// Approve/reject plan (this just updates plan status, events are already created)
+// Approve/reject plan (updates all events for the plan)
 router.put('/:id/approve', async (req, res) => {
   try {
     const tenantKey = req.tenantKey || 'default';
-    const plan = await YogaPlan.findOne({ _id: req.params.id, tenantKey });
+    const planId = req.params.id;
 
-    if (!plan) {
+    // Find all events for this plan
+    const events = await Event.find({
+      planId: planId,
+      tenantKey,
+      aiGenerated: true,
+      generatedFrom: 'yoga_plan'
+    });
+
+    if (!events || events.length === 0) {
       return res.status(404).json({ error: 'Plan not found' });
     }
 
-    plan.status = req.body.approved ? 'approved' : 'rejected';
-    plan.reviewedAt = new Date();
-    plan.reviewedBy = req.body.reviewerId || 'instructor-1';
-    plan.reviewNotes = req.body.notes || '';
-    plan.rejectionReason = req.body.reason || '';
+    const approved = req.body.approved;
+    const reviewerId = req.body.reviewerId || 'admin';
+    const notes = req.body.notes || '';
+    const reason = req.body.reason || '';
 
-    await plan.save();
+    // Update all events in the plan
+    const updateData = {
+      approvalStatus: approved ? 'approved' : 'rejected',
+      isVisible: approved ? true : false
+    };
+
+    if (approved) {
+      updateData.approvedBy = reviewerId;
+      updateData.approvedAt = new Date();
+      updateData.approvalNotes = notes;
+    } else {
+      updateData.rejectedBy = reviewerId;
+      updateData.rejectedAt = new Date();
+      updateData.rejectionReason = reason;
+    }
+
+    await Event.updateMany(
+      { planId: planId, tenantKey },
+      { $set: updateData }
+    );
+
+    console.log(`Plan ${planId} ${approved ? 'approved' : 'rejected'} by ${reviewerId}`);
 
     res.json({
-      message: `Plan ${plan.status}`,
-      plan
+      message: `Plan ${approved ? 'approved' : 'rejected'}`,
+      planId: planId,
+      eventsUpdated: events.length,
+      status: approved ? 'approved' : 'rejected'
     });
   } catch (error) {
     console.error('Error updating plan approval:', error);
@@ -321,9 +455,8 @@ router.put('/:id/approve', async (req, res) => {
   }
 });
 
-// Helper function to create events from approved plan
-async function createEventsFromPlan(plan, tenantKey) {
-  const Event = require('../models/Event');
+// Helper function to create events from plan data
+async function createEventsFromPlanData(planId, planData, tenantKey) {
   const createdEvents = [];
 
   // Calculate start date (next Monday)
@@ -336,7 +469,7 @@ async function createEventsFromPlan(plan, tenantKey) {
   // Group sessions by day and focus to create recurring events
   const sessionsByDayFocus = {};
 
-  plan.sessions.forEach(session => {
+  planData.sessions.forEach(session => {
     const key = `${session.day}-${session.focus}`;
     if (!sessionsByDayFocus[key]) {
       sessionsByDayFocus[key] = [];
@@ -365,13 +498,13 @@ async function createEventsFromPlan(plan, tenantKey) {
     endDate.setDate(endDate.getDate() + (totalWeeks - 1) * 7);
 
     const event = new Event({
-      title: `${plan.name} - ${firstSession.focus}`,
+      title: `${planData.name} - ${firstSession.focus}`,
       description: `Intensity: ${firstSession.intensity}\nPoses: ${firstSession.poses?.join(', ') || 'Various poses'}\n\nThis is a recurring ${totalWeeks}-week program with ${sessions.length} sessions.`,
       start: firstOccurrence,
       end: endTime,
       type: 'class',
-      category: plan.formData?.experience || 'beginner',
-      level: plan.formData?.experience || 'beginner',
+      category: planData.formData?.experience || 'beginner',
+      level: planData.formData?.experience || 'beginner',
       instructor: 'AI Generated',
       maxParticipants: 15,
       participants: [],
@@ -383,9 +516,9 @@ async function createEventsFromPlan(plan, tenantKey) {
       isVisible: false,
       generatedFrom: 'yoga_plan',
       aiGenerated: true,
-      planId: plan._id.toString(),
-      planName: plan.name,
-      planData: plan.toObject(),
+      planId: planId,
+      planName: planData.name,
+      planData: planData,
       sessionFocus: firstSession.focus,
       sessionIntensity: firstSession.intensity,
       sessionPoses: firstSession.poses,
