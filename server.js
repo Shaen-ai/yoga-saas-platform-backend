@@ -15,6 +15,9 @@ validateEnvironment();
 const app = express();
 const PORT = process.env.PORT || 8000;
 
+// Trust proxy - required for rate limiting behind reverse proxy (nginx, etc.)
+app.set('trust proxy', 1);
+
 // Security middleware
 app.use(helmet());
 

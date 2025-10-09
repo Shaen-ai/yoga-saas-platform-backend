@@ -14,14 +14,19 @@ const extractTenantInfo = (req) => {
 
   // If we have an instance, try to extract additional information
   let instanceData = null;
-  if (instance) {
+  if (instance && instance !== 'undefined' && instance !== 'null') {
     try {
       // Wix instance is base64 encoded JSON with signature
       const [encodedData] = instance.split('.');
-      const decodedData = Buffer.from(encodedData, 'base64').toString('utf-8');
-      instanceData = JSON.parse(decodedData);
+      if (encodedData) {
+        const decodedData = Buffer.from(encodedData, 'base64').toString('utf-8');
+        if (decodedData && decodedData !== 'undefined' && decodedData !== 'null') {
+          instanceData = JSON.parse(decodedData);
+        }
+      }
     } catch (error) {
-      console.error('Failed to decode Wix instance:', error);
+      // Silently fail for invalid instances - use default tenant instead
+      console.error('Failed to decode Wix instance:', error.message);
     }
   }
 
