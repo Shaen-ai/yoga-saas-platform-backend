@@ -30,8 +30,34 @@ const eventSchema = new mongoose.Schema({
     userId: String,
     name: String,
     email: String,
-    registeredAt: Date
+    registeredAt: Date,
+    paymentStatus: {
+      type: String,
+      enum: ['pending', 'paid', 'refunded', 'free'],
+      default: 'free'
+    },
+    paymentId: String,
+    paymentAmount: Number,
+    paidAt: Date
   }],
+  // Payment/Ticketing fields
+  requiresPayment: {
+    type: Boolean,
+    default: false
+  },
+  price: {
+    type: Number,
+    default: 0
+  },
+  paymentMethod: {
+    type: String,
+    enum: ['none', 'paypal', 'stripe'],
+    default: 'none'
+  },
+  totalRevenue: {
+    type: Number,
+    default: 0
+  },
   color: {
     type: String,
     default: '#4A90A4'

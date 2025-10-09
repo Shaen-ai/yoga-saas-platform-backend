@@ -11,6 +11,9 @@ let paymentSettings = {
   },
   paypal: {
     enabled: false,
+    email: '',
+    currency: 'USD',
+    description: 'Yoga Class Payment',
     clientId: '',
     clientSecret: '',
     mode: 'sandbox'
@@ -129,9 +132,11 @@ router.get('/enabled', (req, res) => {
   if (paymentSettings.paypal.enabled) {
     enabledMethods.push({
       type: 'paypal',
+      email: paymentSettings.paypal.email,
+      currency: paymentSettings.paypal.currency || paymentSettings.general.currency,
+      description: paymentSettings.paypal.description || 'Yoga Class Payment',
       clientId: paymentSettings.paypal.clientId,
-      mode: paymentSettings.paypal.mode,
-      currency: paymentSettings.general.currency
+      mode: paymentSettings.paypal.mode
     });
   }
   

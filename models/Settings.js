@@ -19,11 +19,14 @@ const settingsSchema = new mongoose.Schema({
     defaultCalendarLayout: String,
     showModeSwitcher: Boolean,
     showCalendarHeader: Boolean,
-    showMainHeader: Boolean,
     showFooter: Boolean,
     showCreatePlanOption: Boolean,
     showYogaClassesOption: Boolean,
-    showCalendarToggle: Boolean
+    showInstructorInfo: Boolean,
+    showClassDuration: Boolean,
+    showClassLevel: Boolean,
+    showBookingButton: Boolean,
+    showWaitlistOption: Boolean
   },
 
   calendar: {
@@ -36,7 +39,11 @@ const settingsSchema = new mongoose.Schema({
   },
 
   uiPreferences: {
-    clickAction: String
+    clickAction: String,
+    primaryColor: String,
+    fontSize: String,
+    animations: Boolean,
+    language: String
   }
 }, {
   timestamps: true

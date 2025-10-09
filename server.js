@@ -118,6 +118,9 @@ app.use('/api/events', require('./routes/events'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/payment-settings', require('./routes/payment-settings'));
+// PayPal API routes commented out - using simplified PayPal checkout links instead
+// Uncomment if implementing Stripe or other API-based payment integrations
+// app.use('/api/payments', require('./routes/payments'));
 
 /**
  * @swagger
@@ -190,6 +193,7 @@ app.get('/', (req, res) => {
       events: '/api/events',
       settings: '/api/settings',
       paymentSettings: '/api/payment-settings'
+      // payments: '/api/payments' - disabled, using simple PayPal checkout links
     }
   });
 });

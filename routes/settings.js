@@ -80,18 +80,11 @@ router.get('/ui-preferences', async (req, res) => {
       calendarView: globalSettings.layout?.calendarView || globalSettings.calendar?.defaultView || 'month',
       showModeSwitcher: globalSettings.layout?.showModeSwitcher !== false,
       showCalendarHeader: globalSettings.layout?.showCalendarHeader !== false,
-      showHeader: globalSettings.widget?.showHeader !== false,
-      showMainHeader: globalSettings.layout?.showMainHeader !== false,
       headerTitle: globalSettings.widget?.title || 'Classes',
       showFooter: globalSettings.widget?.showFooter || false,
       compactMode: globalSettings.uiPreferences?.compactMode || false,
       showCreatePlanOption: globalSettings.layout?.showCreatePlanOption !== false,
       showYogaClassesOption: globalSettings.layout?.showYogaClassesOption !== false,
-      showCalendarToggle: globalSettings.layout?.showCalendarToggle !== false,
-      showLanguageSelector: globalSettings.layout?.showLanguageSelector !== false,
-      showThemeToggle: globalSettings.layout?.showThemeToggle !== false,
-      showSearchBar: globalSettings.layout?.showSearchBar !== false,
-      showFilters: globalSettings.layout?.showFilters !== false,
       showInstructorInfo: globalSettings.layout?.showInstructorInfo !== false,
       showClassDuration: globalSettings.layout?.showClassDuration !== false,
       showClassLevel: globalSettings.layout?.showClassLevel !== false,
@@ -155,10 +148,17 @@ router.post('/ui-preferences', async (req, res) => {
 
     if (req.body.appearance) {
       if (!settings.appearance) settings.appearance = {};
+      if (!settings.uiPreferences) settings.uiPreferences = {};
+
       Object.keys(req.body.appearance).forEach(key => {
         settings.appearance[key] = req.body.appearance[key];
+        // Also save primaryColor to uiPreferences for consistency
+        if (key === 'primaryColor') {
+          settings.uiPreferences.primaryColor = req.body.appearance[key];
+        }
       });
       settings.markModified('appearance');
+      settings.markModified('uiPreferences');
     }
 
     if (req.body.uiPreferences) {
