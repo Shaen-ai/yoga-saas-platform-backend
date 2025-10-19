@@ -59,15 +59,19 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID', 'X-User-ID', 'X-Wix-Comp-Id', 'X-Wix-Instance']
 }));
 
-// Rate limiting with higher limits for development
+// Rate limiting with much higher limits for development
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000, // increased limit for development
+  windowMs: 1 * 60 * 1000, // 1 minute window (shorter to reset faster)
+  max: process.env.NODE_ENV === 'production' ? 100 : 10000, // 10000 for dev, 100 for prod
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
-  // Skip rate limiting for settings endpoints
+  // Skip rate limiting in development or for specific endpoints
   skip: (req) => {
+    // Skip rate limiting entirely in development
+    if (process.env.NODE_ENV !== 'production') {
+      return true;
+    }
     return req.path.includes('/settings') || req.path.includes('/widget-config');
   }
 });
@@ -115,12 +119,14 @@ connectDB();
 // Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
+app.use('/api/instructors', require('./routes/instructors'));
 app.use('/api/yoga-plans', require('./routes/yoga-plans'));
 app.use('/api/ai', require('./routes/ai-generation'));
 app.use('/api/events', require('./routes/events'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/payment-settings', require('./routes/payment-settings'));
+app.use('/api/notifications', require('./routes/notifications'));
 // PayPal API routes commented out - using simplified PayPal checkout links instead
 // Uncomment if implementing Stripe or other API-based payment integrations
 // app.use('/api/payments', require('./routes/payments'));

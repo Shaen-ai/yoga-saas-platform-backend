@@ -4,6 +4,7 @@ const axios = require('axios');
 const { addTenantFilter } = require('../middleware/tenantMiddleware');
 const Event = require('../models/Event');
 const Payment = require('../models/Payment');
+const Registration = require('../models/Registration');
 
 // PayPal configuration
 const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
@@ -385,6 +386,131 @@ router.get('/stats', async (req, res) => {
   } catch (error) {
     console.error('Error fetching payment stats:', error);
     res.status(500).json({ error: 'Failed to fetch payment statistics' });
+  }
+});
+
+// PayPal IPN endpoint to confirm payment
+router.post('/paypal-ipn', async (req, res) => {
+  try {
+    console.log('PayPal IPN received:', req.body);
+
+    // Acknowledge receipt immediately
+    res.status(200).send('OK');
+
+    // Verify IPN with PayPal (recommended for production)
+    const verificationBody = 'cmd=_notify-validate&' + Object.keys(req.body)
+      .map(key => `${key}=${encodeURIComponent(req.body[key])}`)
+      .join('&');
+
+    try {
+      const verification = await axios.post(
+        'https://www.paypal.com/cgi-bin/webscr',
+        verificationBody,
+        {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+        }
+      );
+
+      if (verification.data !== 'VERIFIED') {
+        console.error('PayPal IPN verification failed:', verification.data);
+        return;
+      }
+    } catch (verifyError) {
+      console.error('PayPal IPN verification error:', verifyError.message);
+      // Continue processing even if verification fails (for development)
+    }
+
+    // Extract data from IPN
+    const paymentStatus = req.body.payment_status;
+    const transactionId = req.body.txn_id;
+    const payerId = req.body.payer_id;
+    const grossAmount = parseFloat(req.body.mc_gross);
+    const currency = req.body.mc_currency;
+
+    // Extract custom data (contains registration ID)
+    let customData;
+    try {
+      customData = JSON.parse(req.body.custom);
+    } catch (e) {
+      console.error('Failed to parse custom data:', e);
+      return;
+    }
+
+    const registrationId = customData.registrationId;
+
+    if (!registrationId) {
+      console.error('No registration ID in IPN custom data');
+      return;
+    }
+
+    // Find the registration
+    const registration = await Registration.findById(registrationId);
+
+    if (!registration) {
+      console.error(`Registration not found: ${registrationId}`);
+      return;
+    }
+
+    // Update registration based on payment status
+    if (paymentStatus === 'Completed') {
+      registration.paymentCompleted = true;
+      registration.status = 'confirmed';
+      registration.paypalTransactionId = transactionId;
+      registration.paypalPayerId = payerId;
+      registration.paypalPaymentStatus = paymentStatus;
+      registration.paymentConfirmedAt = new Date();
+
+      await registration.save();
+
+      console.log(`✅ Payment confirmed for registration ${registrationId}`);
+      console.log(`   Transaction: ${transactionId}, Amount: ${grossAmount} ${currency}`);
+    } else if (paymentStatus === 'Refunded' || paymentStatus === 'Reversed') {
+      registration.status = 'refunded';
+      registration.paypalPaymentStatus = paymentStatus;
+
+      await registration.save();
+
+      console.log(`🔄 Payment ${paymentStatus.toLowerCase()} for registration ${registrationId}`);
+    } else {
+      console.log(`ℹ️  Payment status "${paymentStatus}" for registration ${registrationId}`);
+      registration.paypalPaymentStatus = paymentStatus;
+      await registration.save();
+    }
+
+  } catch (error) {
+    console.error('Error processing PayPal IPN:', error);
+  }
+});
+
+// Manual payment confirmation endpoint (for testing/admin)
+router.post('/confirm-payment/:registrationId', async (req, res) => {
+  try {
+    const { registrationId } = req.params;
+
+    const registration = await Registration.findById(registrationId);
+
+    if (!registration) {
+      return res.status(404).json({ error: 'Registration not found' });
+    }
+
+    if (registration.paymentCompleted) {
+      return res.status(400).json({ error: 'Payment already confirmed' });
+    }
+
+    registration.paymentCompleted = true;
+    registration.status = 'confirmed';
+    registration.paymentConfirmedAt = new Date();
+    await registration.save();
+
+    console.log(`Manual payment confirmation for registration ${registrationId}`);
+
+    res.json({
+      message: 'Payment confirmed successfully',
+      registration
+    });
+  } catch (error) {
+    console.error('Error confirming payment:', error);
+    res.status(500).json({ error: 'Failed to confirm payment' });
   }
 });
 

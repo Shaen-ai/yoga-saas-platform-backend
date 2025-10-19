@@ -8,6 +8,28 @@ const settingsSchema = new mongoose.Schema({
     default: 'default'
   },
 
+  // General Studio Information
+  general: {
+    studioName: String,
+    email: String,
+    phone: String,
+    address: String,
+    timezone: String,
+    language: String
+  },
+
+  // Notification Settings
+  notifications: {
+    emailNotifications: Boolean
+  },
+
+  // Business Settings
+  business: {
+    maxStudentsPerClass: Number,
+    bookingWindow: Number,
+    currency: String
+  },
+
   // Only store values that differ from defaults
   appearance: {
     primaryColor: String,

@@ -13,9 +13,18 @@ router.get('/dashboard', async (req, res) => {
 
     const tenantKey = req.tenantKey || 'default';
 
-    // Get actual data from MongoDB
-    const plans = await YogaPlan.find({ tenantKey });
-    const events = await Event.find({ tenantKey });
+    // Check if database is connected
+    const mongoose = require('mongoose');
+    let plans = [];
+    let events = [];
+
+    if (mongoose.connection.readyState === 1) {
+      // Get actual data from MongoDB
+      plans = await YogaPlan.find({ tenantKey });
+      events = await Event.find({ tenantKey });
+    } else {
+      console.log('GET /analytics/dashboard - Database not connected, using empty data');
+    }
 
     // Get users from in-memory store (will be replaced when User model is created)
     const usersStore = require('./users').usersStore;
@@ -175,11 +184,46 @@ router.get('/revenue', async (req, res) => {
       revenueGrowth: 0,
       topServices: []
     };
-    
+
     res.json(revenueAnalytics);
   } catch (error) {
     console.error('Revenue analytics error:', error);
     res.status(500).json({ error: 'Failed to fetch revenue analytics' });
+  }
+});
+
+// Get instructor analytics
+router.get('/instructors', async (req, res) => {
+  try {
+    const tenantKey = req.tenantKey || 'default';
+
+    // Get instructors from in-memory store
+    const instructorsStore = require('./instructors').instructorsStore;
+    const instructors = instructorsStore.get(tenantKey) || [];
+
+    const instructorAnalytics = {
+      totalInstructors: instructors.length,
+      activeInstructors: instructors.filter(i => i.status === 'active').length,
+      totalClasses: instructors.reduce((sum, i) => sum + (i.totalClasses || 0), 0),
+      averageRating: instructors.length > 0
+        ? instructors.reduce((sum, i) => sum + (i.rating || 0), 0) / instructors.length
+        : 0,
+      topInstructors: instructors
+        .sort((a, b) => (b.rating || 0) - (a.rating || 0))
+        .slice(0, 5)
+        .map(i => ({
+          id: i.id,
+          name: i.name,
+          rating: i.rating || 0,
+          totalClasses: i.totalClasses || 0,
+          activeStudents: i.activeStudents || 0
+        }))
+    };
+
+    res.json(instructorAnalytics);
+  } catch (error) {
+    console.error('Instructor analytics error:', error);
+    res.status(500).json({ error: 'Failed to fetch instructor analytics' });
   }
 });
 

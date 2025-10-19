@@ -28,6 +28,16 @@ router.get('/', async (req, res) => {
     const { status } = req.query;
     const tenantKey = req.tenantKey || 'default';
 
+    // Check if database is connected
+    const mongoose = require('mongoose');
+    if (mongoose.connection.readyState !== 1) {
+      console.log('GET /yoga-plans - Database not connected, returning empty array');
+      return res.json({
+        plans: [],
+        total: 0
+      });
+    }
+
     const filter = {
       tenantKey,
       aiGenerated: true,
@@ -466,78 +476,52 @@ async function createEventsFromPlanData(planId, planData, tenantKey) {
   startDate.setDate(today.getDate() + daysUntilMonday);
   startDate.setHours(9, 0, 0, 0); // Default to 9 AM
 
-  // Group sessions by day and focus to create recurring events
-  const sessionsByDayFocus = {};
+  // Get first session to determine duration
+  const firstSession = planData.sessions[0];
+  const duration = firstSession?.duration || 60;
 
-  planData.sessions.forEach(session => {
-    const key = `${session.day}-${session.focus}`;
-    if (!sessionsByDayFocus[key]) {
-      sessionsByDayFocus[key] = [];
-    }
-    sessionsByDayFocus[key].push(session);
+  // Set end time
+  const endTime = new Date(startDate);
+  endTime.setMinutes(endTime.getMinutes() + duration);
+
+  // Collect all unique focus areas and poses across all sessions
+  const allFocusAreas = [...new Set(planData.sessions.map(s => s.focus))].join(', ');
+  const allPoses = [...new Set(planData.sessions.flatMap(s => s.poses || []))];
+  const intensity = firstSession?.intensity || 'medium';
+
+  // Create a single event representing the entire yoga plan
+  const event = new Event({
+    title: `${planData.name}`,
+    description: `Personalized ${planData.duration || '4 weeks'} yoga program\n\nExperience Level: ${planData.formData?.experience || 'beginner'}\nFrequency: ${planData.formData?.frequency || 3} times per week\nSession Duration: ${duration} minutes\nFocus Areas: ${allFocusAreas}\nIntensity: ${intensity}\n\nSample Poses: ${allPoses.slice(0, 8).join(', ')}${allPoses.length > 8 ? '...' : ''}\n\nThis is a comprehensive ${planData.sessions.length}-session program tailored to your goals.`,
+    start: startDate,
+    end: endTime,
+    type: 'class',
+    category: planData.formData?.experience || 'beginner',
+    level: planData.formData?.experience || 'beginner',
+    instructor: 'AI Generated',
+    maxParticipants: 1, // Individual plan for one user
+    participants: [],
+    color: '#9B59B6', // Purple for AI-generated plans
+    duration: `${duration} min`,
+    location: 'Personal Practice',
+    status: 'scheduled',
+    approvalStatus: 'pending_approval',
+    isVisible: false,
+    generatedFrom: 'yoga_plan',
+    aiGenerated: true,
+    planId: planId,
+    planName: planData.name,
+    planData: planData,
+    sessionFocus: allFocusAreas,
+    sessionIntensity: intensity,
+    sessionPoses: allPoses,
+    // Not a recurring event - single event for the plan
+    isRecurring: false,
+    tenantKey
   });
 
-  // Create one recurring event for each unique day/focus combination
-  for (const [key, sessions] of Object.entries(sessionsByDayFocus)) {
-    const firstSession = sessions[0];
-    const totalWeeks = Math.max(...sessions.map(s => s.week));
-
-    // Calculate first occurrence date
-    const firstOccurrence = new Date(startDate);
-    firstOccurrence.setDate(startDate.getDate() + (firstSession.day - 1));
-
-    // Set time based on day of week
-    const hoursByDay = [9, 10, 14, 16, 18, 19, 20];
-    firstOccurrence.setHours(hoursByDay[(firstSession.day - 1) % hoursByDay.length], 0, 0, 0);
-
-    const endTime = new Date(firstOccurrence);
-    endTime.setMinutes(endTime.getMinutes() + (firstSession.duration || 60));
-
-    // Calculate end date (last occurrence)
-    const endDate = new Date(firstOccurrence);
-    endDate.setDate(endDate.getDate() + (totalWeeks - 1) * 7);
-
-    const event = new Event({
-      title: `${planData.name} - ${firstSession.focus}`,
-      description: `Intensity: ${firstSession.intensity}\nPoses: ${firstSession.poses?.join(', ') || 'Various poses'}\n\nThis is a recurring ${totalWeeks}-week program with ${sessions.length} sessions.`,
-      start: firstOccurrence,
-      end: endTime,
-      type: 'class',
-      category: planData.formData?.experience || 'beginner',
-      level: planData.formData?.experience || 'beginner',
-      instructor: 'AI Generated',
-      maxParticipants: 15,
-      participants: [],
-      color: getColorForFocus(firstSession.focus),
-      duration: `${firstSession.duration || 60} min`,
-      location: 'Main Studio',
-      status: 'scheduled',
-      approvalStatus: 'pending_approval',
-      isVisible: false,
-      generatedFrom: 'yoga_plan',
-      aiGenerated: true,
-      planId: planId,
-      planName: planData.name,
-      planData: planData,
-      sessionFocus: firstSession.focus,
-      sessionIntensity: firstSession.intensity,
-      sessionPoses: firstSession.poses,
-      // Recurring event fields
-      isRecurring: true,
-      recurrencePattern: {
-        frequency: 'weekly',
-        interval: 1,
-        daysOfWeek: [firstOccurrence.getDay()],
-        endDate: endDate,
-        occurrences: sessions.length,
-        exceptions: []
-      },
-      tenantKey
-    });
-
-    await event.save();
-    createdEvents.push(event);
-  }
+  await event.save();
+  createdEvents.push(event);
 
   return createdEvents;
 }

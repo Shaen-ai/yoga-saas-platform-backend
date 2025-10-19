@@ -24,6 +24,31 @@ router.get('/', (req, res) => {
   });
 });
 
+// Get user statistics (must come before /:id route)
+router.get('/stats', (req, res) => {
+  try {
+    const tenantKey = req.tenantKey || 'default';
+    const users = usersStore.get(tenantKey) || [];
+
+    // Calculate stats
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const totalUsers = users.length;
+    const activeUsers = users.filter(u => u.status === 'active').length;
+    const newThisMonth = users.filter(u => new Date(u.createdAt) >= startOfMonth).length;
+
+    res.json({
+      totalUsers,
+      activeUsers,
+      newThisMonth
+    });
+  } catch (error) {
+    console.error('Error fetching user stats:', error);
+    res.status(500).json({ error: 'Failed to fetch user stats' });
+  }
+});
+
 // Get user by ID
 router.get('/:id', (req, res) => {
   const tenantKey = req.tenantKey || 'default';

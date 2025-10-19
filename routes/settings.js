@@ -59,14 +59,100 @@ const defaultSettings = {
   }
 };
 
+// General settings endpoints for dashboard
+router.get('/', async (req, res) => {
+  try {
+    const tenantKey = req.tenantKey || 'default';
+    console.log('GET /settings - Tenant:', tenantKey);
+
+    // Load settings from DB
+    const mongoose = require('mongoose');
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ error: 'Database not available' });
+    }
+
+    let settings = await Settings.findOne({ tenantKey });
+
+    if (!settings) {
+      // Return empty settings structure
+      return res.json({
+        general: {},
+        notifications: {},
+        business: {}
+      });
+    }
+
+    res.json({
+      general: settings.general || {},
+      notifications: settings.notifications || {},
+      business: settings.business || {}
+    });
+  } catch (error) {
+    console.error('Error fetching settings:', error);
+    res.status(500).json({ error: 'Failed to fetch settings', message: error.message });
+  }
+});
+
+router.put('/', async (req, res) => {
+  try {
+    const tenantKey = req.tenantKey || 'default';
+    console.log('PUT /settings - Tenant:', tenantKey);
+
+    const mongoose = require('mongoose');
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ error: 'Database not available' });
+    }
+
+    // Load existing settings or create new
+    let settings = await Settings.findOne({ tenantKey });
+    if (!settings) {
+      settings = new Settings({ tenantKey });
+    }
+
+    // Update fields
+    if (req.body.general) {
+      settings.general = { ...settings.general, ...req.body.general };
+      settings.markModified('general');
+    }
+
+    if (req.body.notifications) {
+      settings.notifications = { ...settings.notifications, ...req.body.notifications };
+      settings.markModified('notifications');
+    }
+
+    if (req.body.business) {
+      settings.business = { ...settings.business, ...req.body.business };
+      settings.markModified('business');
+    }
+
+    await settings.save();
+
+    res.json({
+      success: true,
+      settings: {
+        general: settings.general,
+        notifications: settings.notifications,
+        business: settings.business
+      }
+    });
+  } catch (error) {
+    console.error('Error updating settings:', error);
+    res.status(500).json({ error: 'Failed to update settings', message: error.message });
+  }
+});
+
 // UI preferences endpoint for widget and settings panel
 router.get('/ui-preferences', async (req, res) => {
   try {
     const tenantKey = req.tenantKey || 'default';
     console.log('GET /ui-preferences - Tenant:', tenantKey);
 
-    // Load settings from DB
-    const savedSettings = await Settings.findOne({ tenantKey });
+    // Load settings from DB (skip if no database connection)
+    let savedSettings = null;
+    const mongoose = require('mongoose');
+    if (mongoose.connection.readyState === 1) {
+      savedSettings = await Settings.findOne({ tenantKey });
+    }
 
     // Merge saved settings with defaults (defaults used when values not in DB)
     const globalSettings = savedSettings ? savedSettings.toObject() : {};
@@ -130,6 +216,12 @@ router.get('/ui-preferences', async (req, res) => {
 router.post('/ui-preferences', async (req, res) => {
   try {
     const tenantKey = req.tenantKey || 'default';
+    const mongoose = require('mongoose');
+
+    // Check if database is available
+    if (mongoose.connection.readyState !== 1) {
+      return res.json({ success: true, message: 'Database not connected - changes not persisted', settings: req.body });
+    }
 
     // Load existing settings from DB or create new
     let settings = await Settings.findOne({ tenantKey });
