@@ -8,6 +8,29 @@ const settingsSchema = new mongoose.Schema({
     default: 'default'
   },
 
+  // Wix instance identification
+  instanceId: {
+    type: String,
+    index: true
+  },
+  compId: {
+    type: String,
+    index: true
+  },
+
+  // Widget name (user-defined)
+  widgetName: {
+    type: String,
+    default: ''
+  },
+
+  // Premium plan from Wix
+  premiumPlanName: {
+    type: String,
+    enum: ['free', 'light', 'business', 'business-pro', 'true'],
+    default: 'free'
+  },
+
   // General Studio Information
   general: {
     studioName: String,

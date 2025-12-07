@@ -6,6 +6,9 @@ const mongoose = require('mongoose');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./swagger.config');
 const { attachTenantInfo } = require('./middleware/tenantMiddleware');
+const { optionalWixAuth } = require('./middleware/wixSdkAuth');
+const Settings = require('./models/Settings');
+const Event = require('./models/Event');
 require('dotenv').config();
 
 // Validate environment variables
@@ -117,7 +120,7 @@ const connectDB = async () => {
 connectDB();
 
 // Routes
-app.use('/api/auth', require('./routes/auth'));
+// Note: /api/auth route removed - using Wix SDK authentication instead
 app.use('/api/users', require('./routes/users'));
 app.use('/api/instructors', require('./routes/instructors'));
 app.use('/api/yoga-plans', require('./routes/yoga-plans'));
@@ -207,10 +210,162 @@ app.get('/', (req, res) => {
   });
 });
 
+// Helper function to compute tenant key from instanceId and compId
+const computeTenantKey = (instanceId, compId) => {
+  if (!instanceId) {
+    return 'default';
+  }
+  return `yoga-${instanceId}${compId ? `-${compId}` : ''}`;
+};
+
+// Default widget config
+const defaultWidgetConfig = {
+  layout: {
+    defaultMode: 'calendar',
+    defaultCalendarLayout: 'month',
+    showModeSwitcher: true,
+    showFooter: false
+  },
+  appearance: {
+    primaryColor: '#4A90A4',
+    fontSize: 'medium',
+    borderRadius: 8
+  },
+  calendar: {
+    weekStartsOn: 'sunday'
+  },
+  behavior: {
+    animationsEnabled: true,
+    language: 'en'
+  }
+};
+
+// Get all widgets for an instance (used by dashboard when no compId is specified)
+app.get('/api/widgets', optionalWixAuth, async (req, res) => {
+  try {
+    const instanceId = req.wix?.instanceId;
+
+    if (!instanceId) {
+      return res.status(400).json({ error: 'Instance ID is required' });
+    }
+
+    const widgets = await Settings.find({
+      instanceId: instanceId,
+      compId: { $exists: true, $nin: [null, ''] }
+    }).select('compId widgetName layout createdAt updatedAt').lean();
+
+    const widgetList = widgets.map(w => ({
+      compId: w.compId,
+      widgetName: w.widgetName || '',
+      defaultView: w.layout?.defaultMode || 'calendar',
+      createdAt: w.createdAt,
+      updatedAt: w.updatedAt
+    }));
+
+    res.json(widgetList);
+  } catch (error) {
+    console.error('Error fetching widgets:', error);
+    res.status(500).json({ error: 'Failed to fetch widgets' });
+  }
+});
+
+// Combined endpoint - fetches both config and events in a single request
+app.get('/api/widget-data', optionalWixAuth, async (req, res) => {
+  try {
+    const instanceId = req.wix?.instanceId;
+    const compId = req.wix?.compId;
+
+    // If no instanceId, return defaults without creating/querying DB
+    if (!instanceId) {
+      res.json({
+        config: {
+          ...defaultWidgetConfig,
+          widgetName: '',
+          premiumPlanName: 'free'
+        },
+        events: []
+      });
+      return;
+    }
+
+    const desiredKey = computeTenantKey(instanceId, compId);
+    const instanceFallbackKey = computeTenantKey(instanceId, null);
+
+    // Build keys to query for config
+    const keysToQuery = [desiredKey];
+    if (instanceFallbackKey !== desiredKey) {
+      keysToQuery.push(instanceFallbackKey);
+    }
+
+    // Run config and events queries in parallel
+    const [configs, events] = await Promise.all([
+      Settings.find({ tenantKey: { $in: keysToQuery } }).lean(),
+      compId
+        ? Event.find({ instanceId, compId }).sort({ createdAt: -1 }).lean()
+        : Promise.resolve([])
+    ]);
+
+    // Find the best matching config
+    const config = configs.find(c => c.tenantKey === desiredKey)
+      || configs.find(c => c.tenantKey === instanceFallbackKey)
+      || null;
+
+    // Determine premium plan
+    let premiumPlanName;
+    if (config?.premiumPlanName) {
+      premiumPlanName = config.premiumPlanName;
+    } else if (req.wix?.vendorProductId) {
+      // If vendorProductId is 'true', treat as 'light'
+      premiumPlanName = req.wix.vendorProductId === 'true' ? 'light' : req.wix.vendorProductId;
+    } else {
+      premiumPlanName = 'free';
+    }
+
+    res.json({
+      config: {
+        layout: config?.layout || defaultWidgetConfig.layout,
+        appearance: config?.appearance || defaultWidgetConfig.appearance,
+        calendar: config?.calendar || defaultWidgetConfig.calendar,
+        behavior: config?.behavior || defaultWidgetConfig.behavior,
+        widgetName: config?.widgetName || '',
+        premiumPlanName
+      },
+      events: events || []
+    });
+  } catch (error) {
+    console.error('Error fetching widget data:', error);
+    res.status(500).json({ error: 'Failed to fetch widget data' });
+  }
+});
+
+// Premium status check - used by widget to determine premium features
+app.get('/api/premium-status', optionalWixAuth, async (req, res) => {
+  try {
+    const vendorProductId = req.wix?.vendorProductId || null;
+    const instanceId = req.wix?.instanceId || null;
+
+    // Determine premium plan based on vendorProductId
+    let premiumPlanName = 'free';
+    if (vendorProductId) {
+      premiumPlanName = vendorProductId === 'true' ? 'light' : vendorProductId;
+    }
+
+    res.json({
+      instanceId,
+      vendorProductId,
+      premiumPlanName,
+      isPremium: premiumPlanName !== 'free'
+    });
+  } catch (error) {
+    console.error('Error getting premium status:', error);
+    res.status(500).json({ error: 'Failed to get premium status' });
+  }
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({ 
+  res.status(500).json({
     error: 'Something went wrong!',
     message: process.env.NODE_ENV === 'development' ? err.message : undefined
   });
