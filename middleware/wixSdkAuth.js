@@ -62,7 +62,7 @@ const verifyAccessToken = async (accessToken, appId, appSecret) => {
 
     // Step 2: Create elevated client to get full app instance data
     const elevatedClient = createClient({
-      auth: AppStrategy({
+      auth: await AppStrategy({
         appId,
         appSecret,
         accessToken,
