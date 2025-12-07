@@ -148,7 +148,10 @@ const optionalWixAuth = async (req, res, next) => {
     const authHeader = req.headers.authorization || '';
     const accessToken = authHeader.replace('Bearer ', '');
 
+    console.log('[optionalWixAuth] Auth header present:', !!authHeader);
+
     if (!accessToken) {
+      console.log('[optionalWixAuth] No access token, skipping auth');
       return next();
     }
 
@@ -156,11 +159,16 @@ const optionalWixAuth = async (req, res, next) => {
     const WIX_APP_SECRET = process.env.WIX_APP_SECRET;
     const compId = extractCompId(req);
 
+    console.log('[optionalWixAuth] App credentials present:', !!WIX_APP_ID && !!WIX_APP_SECRET);
+
     if (!WIX_APP_ID || !WIX_APP_SECRET) {
+      console.log('[optionalWixAuth] Missing app credentials, skipping auth');
       return next();
     }
 
+    console.log('[optionalWixAuth] Verifying token...');
     const wixData = await verifyAccessToken(accessToken, WIX_APP_ID, WIX_APP_SECRET);
+    console.log('[optionalWixAuth] Token verified, instanceId:', wixData.instanceId);
 
     req.wix = {
       instanceId: wixData.instanceId,
@@ -169,7 +177,8 @@ const optionalWixAuth = async (req, res, next) => {
       compId,
       decodedToken: wixData.instanceData,
     };
-  } catch {
+  } catch (error) {
+    console.error('[optionalWixAuth] Token verification failed:', error.message);
     // Token invalid, continue without Wix data
   }
 

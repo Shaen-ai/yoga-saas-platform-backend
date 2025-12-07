@@ -244,9 +244,18 @@ const defaultWidgetConfig = {
 app.get('/api/widgets', optionalWixAuth, async (req, res) => {
   try {
     const instanceId = req.wix?.instanceId;
+    const authHeader = req.headers.authorization;
+
+    console.log('[API /widgets] Request received:', {
+      hasAuthHeader: !!authHeader,
+      authHeaderPrefix: authHeader ? authHeader.substring(0, 20) + '...' : 'none',
+      instanceId: instanceId || 'not found',
+      wixData: req.wix ? 'present' : 'missing'
+    });
 
     if (!instanceId) {
-      return res.status(400).json({ error: 'Instance ID is required' });
+      console.log('[API /widgets] No instanceId - token verification may have failed');
+      return res.status(400).json({ error: 'Instance ID is required. Make sure you are authenticated.' });
     }
 
     const widgets = await Settings.find({
