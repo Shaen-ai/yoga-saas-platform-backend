@@ -240,6 +240,63 @@ const defaultWidgetConfig = {
   }
 };
 
+// Register a widget (called when widget first loads to ensure it's in the database)
+app.post('/api/widgets/register', optionalWixAuth, async (req, res) => {
+  try {
+    const instanceId = req.wix?.instanceId;
+    const compId = req.wix?.compId;
+    const widgetName = req.body?.widgetName || '';
+
+    console.log('[API /widgets/register] Request:', { instanceId, compId, widgetName });
+
+    if (!instanceId || !compId) {
+      return res.status(400).json({ error: 'instanceId and compId are required' });
+    }
+
+    const tenantKey = computeTenantKey(instanceId, compId);
+
+    // Find or create settings for this widget
+    let settings = await Settings.findOne({ tenantKey });
+    if (!settings) {
+      settings = new Settings({
+        tenantKey,
+        instanceId,
+        compId,
+        widgetName: widgetName || `Widget ${compId.slice(-6)}`
+      });
+      await settings.save();
+      console.log('[API /widgets/register] Created new widget:', { tenantKey, instanceId, compId });
+    } else {
+      // Update instanceId/compId if not set
+      let needsUpdate = false;
+      if (!settings.instanceId) {
+        settings.instanceId = instanceId;
+        needsUpdate = true;
+      }
+      if (!settings.compId) {
+        settings.compId = compId;
+        needsUpdate = true;
+      }
+      if (needsUpdate) {
+        await settings.save();
+        console.log('[API /widgets/register] Updated existing widget:', { tenantKey, instanceId, compId });
+      }
+    }
+
+    res.json({
+      success: true,
+      widget: {
+        compId: settings.compId,
+        widgetName: settings.widgetName || '',
+        instanceId: settings.instanceId
+      }
+    });
+  } catch (error) {
+    console.error('Error registering widget:', error);
+    res.status(500).json({ error: 'Failed to register widget' });
+  }
+});
+
 // Get all widgets for an instance (used by dashboard when no compId is specified)
 app.get('/api/widgets', optionalWixAuth, async (req, res) => {
   try {

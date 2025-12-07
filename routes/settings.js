@@ -229,7 +229,11 @@ router.get('/ui-preferences', optionalWixAuth, async (req, res) => {
 router.post('/ui-preferences', optionalWixAuth, async (req, res) => {
   try {
     const tenantKey = req.tenantKey || 'default';
+    const instanceId = req.wix?.instanceId || null;
+    const compId = req.wix?.compId || null;
     const mongoose = require('mongoose');
+
+    console.log('POST /ui-preferences - Tenant:', tenantKey, 'instanceId:', instanceId, 'compId:', compId);
 
     // Check if database is available
     if (mongoose.connection.readyState !== 1) {
@@ -240,6 +244,15 @@ router.post('/ui-preferences', optionalWixAuth, async (req, res) => {
     let settings = await Settings.findOne({ tenantKey });
     if (!settings) {
       settings = new Settings({ tenantKey });
+    }
+
+    // Always update instanceId and compId from Wix auth if available
+    // This ensures widgets are registered and can be queried by instanceId
+    if (instanceId) {
+      settings.instanceId = instanceId;
+    }
+    if (compId) {
+      settings.compId = compId;
     }
 
     // Only update individual fields that are provided (only store edited values)
