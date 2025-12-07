@@ -145,7 +145,11 @@ router.put('/', async (req, res) => {
 router.get('/ui-preferences', async (req, res) => {
   try {
     const tenantKey = req.tenantKey || 'default';
-    console.log('GET /ui-preferences - Tenant:', tenantKey);
+    const instanceId = req.wix?.instanceId || null;
+    const compId = req.wix?.compId || null;
+    const authHeader = req.headers.authorization || null;
+
+    console.log('GET /ui-preferences - Tenant:', tenantKey, 'instanceId:', instanceId, 'compId:', compId);
 
     // Load settings from DB (skip if no database connection)
     let savedSettings = null;
@@ -204,6 +208,14 @@ router.get('/ui-preferences', async (req, res) => {
       clickAction: globalSettings.uiPreferences?.clickAction || 'tooltip'
     }
   };
+
+    // Add auth info to response (used by settings panel for dashboard URL)
+    panelSettings.auth = {
+      instanceId,
+      compId,
+      instanceToken: authHeader,
+      isAuthenticated: !!authHeader
+    };
 
     console.log('GET /ui-preferences - Returning settings for tenant:', tenantKey);
     res.json(panelSettings);
