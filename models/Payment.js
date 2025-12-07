@@ -65,6 +65,15 @@ const paymentSchema = new mongoose.Schema({
     type: String,
     required: true,
     index: true
+  },
+  // Wix instance identification
+  instanceId: {
+    type: String,
+    index: true
+  },
+  compId: {
+    type: String,
+    index: true
   }
 }, {
   timestamps: true

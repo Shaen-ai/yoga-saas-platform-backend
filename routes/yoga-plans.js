@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { addTenantFilter, addTenantToData } = require('../middleware/tenantMiddleware');
+const { optionalWixAuth } = require('../middleware/wixSdkAuth');
 const Event = require('../models/Event');
 
 /**
@@ -23,10 +24,12 @@ const Event = require('../models/Event');
  *                 total:
  *                   type: number
  */
-router.get('/', async (req, res) => {
+router.get('/', optionalWixAuth, async (req, res) => {
   try {
     const { status } = req.query;
     const tenantKey = req.tenantKey || 'default';
+    const instanceId = req.wix?.instanceId;
+    const compId = req.wix?.compId;
 
     // Check if database is connected
     const mongoose = require('mongoose');
@@ -43,6 +46,10 @@ router.get('/', async (req, res) => {
       aiGenerated: true,
       generatedFrom: 'yoga_plan'
     };
+
+    // Filter by Wix instance if available
+    if (instanceId) filter.instanceId = instanceId;
+    if (compId) filter.compId = compId;
 
     if (status) {
       filter.approvalStatus = status;
@@ -115,15 +122,24 @@ router.get('/', async (req, res) => {
  *       404:
  *         description: Plan not found
  */
-router.get('/:id', async (req, res) => {
+router.get('/:id', optionalWixAuth, async (req, res) => {
   try {
     const tenantKey = req.tenantKey || 'default';
-    const events = await Event.find({
+    const instanceId = req.wix?.instanceId;
+    const compId = req.wix?.compId;
+
+    const filter = {
       planId: req.params.id,
       tenantKey,
       aiGenerated: true,
       generatedFrom: 'yoga_plan'
-    });
+    };
+
+    // Filter by Wix instance if available
+    if (instanceId) filter.instanceId = instanceId;
+    if (compId) filter.compId = compId;
+
+    const events = await Event.find(filter);
 
     if (!events || events.length === 0) {
       return res.status(404).json({ error: 'Plan not found' });
@@ -185,15 +201,24 @@ router.get('/:id', async (req, res) => {
  *                 total:
  *                   type: number
  */
-router.get('/user/:userId', async (req, res) => {
+router.get('/user/:userId', optionalWixAuth, async (req, res) => {
   try {
     const tenantKey = req.tenantKey || 'default';
-    const events = await Event.find({
+    const instanceId = req.wix?.instanceId;
+    const compId = req.wix?.compId;
+
+    const filter = {
       'planData.userId': req.params.userId,
       tenantKey,
       aiGenerated: true,
       generatedFrom: 'yoga_plan'
-    }).sort({ createdAt: -1 });
+    };
+
+    // Filter by Wix instance if available
+    if (instanceId) filter.instanceId = instanceId;
+    if (compId) filter.compId = compId;
+
+    const events = await Event.find(filter).sort({ createdAt: -1 });
 
     // Group events by planId
     const plansMap = new Map();
@@ -240,10 +265,12 @@ router.get('/user/:userId', async (req, res) => {
 });
 
 // Generate new plan with AI integration
-router.post('/generate', async (req, res) => {
+router.post('/generate', optionalWixAuth, async (req, res) => {
   try {
     const { userId, formData } = req.body;
     const tenantKey = req.tenantKey || 'default';
+    const instanceId = req.wix?.instanceId;
+    const compId = req.wix?.compId;
 
     // Generate a unique plan ID
     const mongoose = require('mongoose');
@@ -264,7 +291,7 @@ router.post('/generate', async (req, res) => {
 
     // Create events directly from the plan data
     try {
-      const eventsCreated = await createEventsFromPlanData(planId, planData, tenantKey);
+      const eventsCreated = await createEventsFromPlanData(planId, planData, tenantKey, instanceId, compId);
       console.log(`Created ${eventsCreated.length} recurring events from new plan ${planId} - awaiting approval`);
 
       res.json({
@@ -334,9 +361,11 @@ function getIntensity(week, level) {
 }
 
 // Alias for generate endpoint - for backward compatibility
-router.post('/generate-ai', async (req, res) => {
+router.post('/generate-ai', optionalWixAuth, async (req, res) => {
   try {
     const { userId, userData, assessment } = req.body;
+    const instanceId = req.wix?.instanceId;
+    const compId = req.wix?.compId;
 
     const formData = userData || assessment || {
       experience: 'beginner',
@@ -373,7 +402,7 @@ router.post('/generate-ai', async (req, res) => {
 
     // Create events directly from the plan data
     try {
-      const eventsCreated = await createEventsFromPlanData(planId, planData, tenantKey);
+      const eventsCreated = await createEventsFromPlanData(planId, planData, tenantKey, instanceId, compId);
       console.log(`Created ${eventsCreated.length} events from new plan ${planId} - awaiting approval`);
 
       res.json({
@@ -408,18 +437,27 @@ router.post('/generate-ai', async (req, res) => {
 });
 
 // Approve/reject plan (updates all events for the plan)
-router.put('/:id/approve', async (req, res) => {
+router.put('/:id/approve', optionalWixAuth, async (req, res) => {
   try {
     const tenantKey = req.tenantKey || 'default';
     const planId = req.params.id;
+    const instanceId = req.wix?.instanceId;
+    const compId = req.wix?.compId;
 
-    // Find all events for this plan
-    const events = await Event.find({
+    // Build filter for finding events
+    const filter = {
       planId: planId,
       tenantKey,
       aiGenerated: true,
       generatedFrom: 'yoga_plan'
-    });
+    };
+
+    // Filter by Wix instance if available
+    if (instanceId) filter.instanceId = instanceId;
+    if (compId) filter.compId = compId;
+
+    // Find all events for this plan
+    const events = await Event.find(filter);
 
     if (!events || events.length === 0) {
       return res.status(404).json({ error: 'Plan not found' });
@@ -446,10 +484,7 @@ router.put('/:id/approve', async (req, res) => {
       updateData.rejectionReason = reason;
     }
 
-    await Event.updateMany(
-      { planId: planId, tenantKey },
-      { $set: updateData }
-    );
+    await Event.updateMany(filter, { $set: updateData });
 
     console.log(`Plan ${planId} ${approved ? 'approved' : 'rejected'} by ${reviewerId}`);
 
@@ -466,7 +501,7 @@ router.put('/:id/approve', async (req, res) => {
 });
 
 // Helper function to create events from plan data
-async function createEventsFromPlanData(planId, planData, tenantKey) {
+async function createEventsFromPlanData(planId, planData, tenantKey, instanceId, compId) {
   const createdEvents = [];
 
   // Calculate start date (next Monday)
@@ -517,7 +552,10 @@ async function createEventsFromPlanData(planId, planData, tenantKey) {
     sessionPoses: allPoses,
     // Not a recurring event - single event for the plan
     isRecurring: false,
-    tenantKey
+    tenantKey,
+    // Wix instance identification
+    instanceId,
+    compId
   });
 
   await event.save();

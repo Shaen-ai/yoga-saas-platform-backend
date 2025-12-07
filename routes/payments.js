@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 const { addTenantFilter } = require('../middleware/tenantMiddleware');
+const { optionalWixAuth } = require('../middleware/wixSdkAuth');
 const Event = require('../models/Event');
 const Payment = require('../models/Payment');
 const Registration = require('../models/Registration');
@@ -35,10 +36,12 @@ async function getPayPalAccessToken() {
 }
 
 // Create PayPal order
-router.post('/create-order', async (req, res) => {
+router.post('/create-order', optionalWixAuth, async (req, res) => {
   try {
     const { eventId, userName, userEmail } = req.body;
     const tenantKey = req.tenantKey || 'default';
+    const instanceId = req.wix?.instanceId;
+    const compId = req.wix?.compId;
 
     console.log('Creating PayPal order for event:', eventId);
 
@@ -112,7 +115,10 @@ router.post('/create-order', async (req, res) => {
       status: 'pending',
       paymentGatewayId: response.data.id,
       paymentGatewayData: response.data,
-      tenantKey
+      tenantKey,
+      // Wix instance identification
+      instanceId,
+      compId
     });
     await payment.save();
 
@@ -239,12 +245,18 @@ router.post('/capture-order', async (req, res) => {
 });
 
 // Get payment details
-router.get('/payment/:paymentId', async (req, res) => {
+router.get('/payment/:paymentId', optionalWixAuth, async (req, res) => {
   try {
     const { paymentId } = req.params;
     const tenantKey = req.tenantKey || 'default';
+    const instanceId = req.wix?.instanceId;
+    const compId = req.wix?.compId;
 
-    const payment = await Payment.findOne({ _id: paymentId, tenantKey })
+    const filter = { _id: paymentId, tenantKey };
+    if (instanceId) filter.instanceId = instanceId;
+    if (compId) filter.compId = compId;
+
+    const payment = await Payment.findOne(filter)
       .populate('eventId');
 
     if (!payment) {
@@ -259,16 +271,22 @@ router.get('/payment/:paymentId', async (req, res) => {
 });
 
 // Get all payments for an event
-router.get('/event/:eventId', async (req, res) => {
+router.get('/event/:eventId', optionalWixAuth, async (req, res) => {
   try {
     const { eventId } = req.params;
     const tenantKey = req.tenantKey || 'default';
+    const instanceId = req.wix?.instanceId;
+    const compId = req.wix?.compId;
 
-    const payments = await Payment.find({
+    const filter = {
       eventId,
       tenantKey,
       status: 'completed'
-    }).sort({ paidAt: -1 });
+    };
+    if (instanceId) filter.instanceId = instanceId;
+    if (compId) filter.compId = compId;
+
+    const payments = await Payment.find(filter).sort({ paidAt: -1 });
 
     const totalRevenue = payments.reduce((sum, payment) => sum + payment.amount, 0);
 
@@ -355,12 +373,18 @@ router.post('/refund', async (req, res) => {
 });
 
 // Get payment statistics
-router.get('/stats', async (req, res) => {
+router.get('/stats', optionalWixAuth, async (req, res) => {
   try {
     const tenantKey = req.tenantKey || 'default';
+    const instanceId = req.wix?.instanceId;
+    const compId = req.wix?.compId;
+
+    const matchFilter = { tenantKey, status: 'completed' };
+    if (instanceId) matchFilter.instanceId = instanceId;
+    if (compId) matchFilter.compId = compId;
 
     const stats = await Payment.aggregate([
-      { $match: { tenantKey, status: 'completed' } },
+      { $match: matchFilter },
       {
         $group: {
           _id: null,
@@ -371,10 +395,11 @@ router.get('/stats', async (req, res) => {
       }
     ]);
 
-    const recentPayments = await Payment.find({
-      tenantKey,
-      status: 'completed'
-    })
+    const recentPaymentsFilter = { tenantKey, status: 'completed' };
+    if (instanceId) recentPaymentsFilter.instanceId = instanceId;
+    if (compId) recentPaymentsFilter.compId = compId;
+
+    const recentPayments = await Payment.find(recentPaymentsFilter)
       .sort({ paidAt: -1 })
       .limit(10)
       .populate('eventId', 'title start');

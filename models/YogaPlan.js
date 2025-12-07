@@ -48,7 +48,16 @@ const yogaPlanSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  tags: [String]
+  tags: [String],
+  // Wix instance identification
+  instanceId: {
+    type: String,
+    index: true
+  },
+  compId: {
+    type: String,
+    index: true
+  }
 }, {
   timestamps: true
 });

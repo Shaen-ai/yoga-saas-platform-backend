@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { addTenantFilter, addTenantToData } = require('../middleware/tenantMiddleware');
+const { optionalWixAuth } = require('../middleware/wixSdkAuth');
 const Event = require('../models/Event');
 const Registration = require('../models/Registration');
 const Settings = require('../models/Settings');
@@ -10,9 +11,11 @@ const { sendRegistrationEmails } = require('../utils/emailService');
 const eventsStore = new Map();
 
 // Get all events
-router.get('/', async (req, res) => {
+router.get('/', optionalWixAuth, async (req, res) => {
   try {
     const tenantKey = req.tenantKey || 'default';
+    const instanceId = req.wix?.instanceId;
+    const compId = req.wix?.compId;
 
     // Check if database is connected
     const mongoose = require('mongoose');
@@ -25,7 +28,12 @@ router.get('/', async (req, res) => {
       });
     }
 
-    const events = await Event.find({ tenantKey }).sort({ start: -1 });
+    // Build query - filter by instanceId and compId if available
+    const query = { tenantKey };
+    if (instanceId) query.instanceId = instanceId;
+    if (compId) query.compId = compId;
+
+    const events = await Event.find(query).sort({ start: -1 });
 
     // Populate each event with confirmed registrations only
     const eventsWithRegistrations = await Promise.all(events.map(async (event) => {
@@ -68,9 +76,11 @@ router.get('/', async (req, res) => {
 });
 
 // Create new event
-router.post('/', async (req, res) => {
+router.post('/', optionalWixAuth, async (req, res) => {
   try {
     const tenantKey = req.tenantKey || 'default';
+    const instanceId = req.wix?.instanceId;
+    const compId = req.wix?.compId;
 
     // Check if database is connected
     const mongoose = require('mongoose');
@@ -95,6 +105,8 @@ router.post('/', async (req, res) => {
         isVisible: req.body.isVisible !== undefined ? req.body.isVisible : true,
         aiGenerated: req.body.aiGenerated || false,
         tenantKey,
+        instanceId,
+        compId,
         createdAt: new Date(),
         updatedAt: new Date()
       };
@@ -119,7 +131,9 @@ router.post('/', async (req, res) => {
       approvalStatus: req.body.approvalStatus || 'approved',
       isVisible: req.body.isVisible !== undefined ? req.body.isVisible : true,
       aiGenerated: req.body.aiGenerated || false,
-      tenantKey
+      tenantKey,
+      instanceId,
+      compId
     });
 
     await event.save();
@@ -259,9 +273,11 @@ router.get('/:id/registrations', async (req, res) => {
 });
 
 // Register for event
-router.post('/:id/register', async (req, res) => {
+router.post('/:id/register', optionalWixAuth, async (req, res) => {
   try {
     const tenantKey = req.tenantKey || 'default';
+    const instanceId = req.wix?.instanceId;
+    const compId = req.wix?.compId;
 
     // Check if database is connected
     const mongoose = require('mongoose');
@@ -318,7 +334,9 @@ router.post('/:id/register', async (req, res) => {
       paymentAmount: requiresPayment ? event.price : 0,
       paymentCurrency: event.currency || 'USD',
       status,
-      tenantKey
+      tenantKey,
+      instanceId,
+      compId
     });
 
     await registration.save();

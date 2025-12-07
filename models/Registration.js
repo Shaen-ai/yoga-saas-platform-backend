@@ -64,6 +64,15 @@ const registrationSchema = new mongoose.Schema({
     type: String,
     required: true,
     default: 'default'
+  },
+  // Wix instance identification
+  instanceId: {
+    type: String,
+    index: true
+  },
+  compId: {
+    type: String,
+    index: true
   }
 }, {
   timestamps: true
