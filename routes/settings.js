@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { addTenantFilter, addTenantToData } = require('../middleware/tenantMiddleware');
+const { optionalWixAuth } = require('../middleware/wixSdkAuth');
 const Settings = require('../models/Settings');
 
 // Default settings template (used when values are not in DB)
@@ -142,7 +143,7 @@ router.put('/', async (req, res) => {
 });
 
 // UI preferences endpoint for widget and settings panel
-router.get('/ui-preferences', async (req, res) => {
+router.get('/ui-preferences', optionalWixAuth, async (req, res) => {
   try {
     const tenantKey = req.tenantKey || 'default';
     const instanceId = req.wix?.instanceId || null;
@@ -225,7 +226,7 @@ router.get('/ui-preferences', async (req, res) => {
   }
 });
 
-router.post('/ui-preferences', async (req, res) => {
+router.post('/ui-preferences', optionalWixAuth, async (req, res) => {
   try {
     const tenantKey = req.tenantKey || 'default';
     const mongoose = require('mongoose');
