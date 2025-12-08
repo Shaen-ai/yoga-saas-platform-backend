@@ -335,20 +335,71 @@ app.get('/api/widgets', optionalWixAuth, async (req, res) => {
   }
 });
 
-// Combined endpoint - fetches both config and events in a single request
+// Combined endpoint - fetches settings and events in a single request
+// This replaces separate calls to /settings/ui-preferences and /events
 app.get('/api/widget-data', optionalWixAuth, async (req, res) => {
   try {
     const instanceId = req.wix?.instanceId;
     const compId = req.wix?.compId;
+    const tenantKey = req.tenantKey || 'default';
 
-    // If no instanceId, return defaults without creating/querying DB
+    // Default settings (same format as /settings/ui-preferences)
+    const defaultSettings = {
+      layout: {
+        defaultView: 'yogaClasses',
+        defaultMode: 'calendar',
+        defaultCalendarLayout: 'month',
+        calendarView: 'month',
+        showModeSwitcher: true,
+        showCalendarHeader: true,
+        headerTitle: 'Classes',
+        showFooter: false,
+        compactMode: false,
+        showCreatePlanOption: true,
+        showYogaClassesOption: true,
+        showInstructorInfo: true,
+        showClassDuration: true,
+        showClassLevel: true,
+        showBookingButton: true,
+        showWaitlistOption: true
+      },
+      appearance: {
+        primaryColor: '#4A90A4',
+        backgroundColor: '#ffffff',
+        headerColor: '#f8f9fa',
+        borderRadius: 8,
+        fontFamily: 'default',
+        fontSize: 'medium'
+      },
+      calendar: {
+        weekStartsOn: 'sunday',
+        timeFormat: '12h',
+        showWeekNumbers: false,
+        eventDisplay: 'block',
+        minTime: '06:00',
+        maxTime: '22:00'
+      },
+      behavior: {
+        autoSave: true,
+        confirmBeforeDelete: true,
+        animationsEnabled: true,
+        showTooltips: true,
+        language: 'en'
+      },
+      uiPreferences: {
+        clickAction: 'tooltip'
+      },
+      eventCategories: {
+        default: [],
+        custom: [],
+        showCategoryFilter: true
+      }
+    };
+
+    // If no instanceId, return defaults without querying DB
     if (!instanceId) {
       res.json({
-        config: {
-          ...defaultWidgetConfig,
-          widgetName: '',
-          premiumPlanName: 'free'
-        },
+        settings: defaultSettings,
         events: []
       });
       return;
@@ -357,45 +408,83 @@ app.get('/api/widget-data', optionalWixAuth, async (req, res) => {
     const desiredKey = computeTenantKey(instanceId, compId);
     const instanceFallbackKey = computeTenantKey(instanceId, null);
 
-    // Build keys to query for config
+    // Build keys to query for settings
     const keysToQuery = [desiredKey];
     if (instanceFallbackKey !== desiredKey) {
       keysToQuery.push(instanceFallbackKey);
     }
 
-    // Run config and events queries in parallel
+    // Run settings and events queries in parallel for maximum performance
     const [configs, events] = await Promise.all([
       Settings.find({ tenantKey: { $in: keysToQuery } }).lean(),
       compId
-        ? Event.find({ instanceId, compId }).sort({ createdAt: -1 }).lean()
+        ? Event.find({ instanceId, compId, isVisible: { $ne: false } }).sort({ start: 1 }).lean()
         : Promise.resolve([])
     ]);
 
     // Find the best matching config
-    const config = configs.find(c => c.tenantKey === desiredKey)
+    const savedSettings = configs.find(c => c.tenantKey === desiredKey)
       || configs.find(c => c.tenantKey === instanceFallbackKey)
       || null;
 
-    // Determine premium plan
-    let premiumPlanName;
-    if (config?.premiumPlanName) {
-      premiumPlanName = config.premiumPlanName;
-    } else if (req.wix?.vendorProductId) {
-      // If vendorProductId is 'true', treat as 'light'
-      premiumPlanName = req.wix.vendorProductId === 'true' ? 'light' : req.wix.vendorProductId;
-    } else {
-      premiumPlanName = 'free';
-    }
+    // Build response in the same format as /settings/ui-preferences
+    const settings = {
+      layout: {
+        defaultView: savedSettings?.widget?.defaultView || 'yogaClasses',
+        defaultMode: savedSettings?.layout?.defaultMode || 'calendar',
+        defaultCalendarLayout: savedSettings?.layout?.defaultCalendarLayout || savedSettings?.calendar?.defaultView || 'month',
+        calendarView: savedSettings?.layout?.calendarView || savedSettings?.calendar?.defaultView || 'month',
+        showModeSwitcher: savedSettings?.layout?.showModeSwitcher !== false,
+        showCalendarHeader: savedSettings?.layout?.showCalendarHeader !== false,
+        headerTitle: savedSettings?.widget?.title || 'Classes',
+        showFooter: savedSettings?.widget?.showFooter || false,
+        compactMode: savedSettings?.uiPreferences?.compactMode || false,
+        showCreatePlanOption: savedSettings?.layout?.showCreatePlanOption !== false,
+        showYogaClassesOption: savedSettings?.layout?.showYogaClassesOption !== false,
+        showInstructorInfo: savedSettings?.layout?.showInstructorInfo !== false,
+        showClassDuration: savedSettings?.layout?.showClassDuration !== false,
+        showClassLevel: savedSettings?.layout?.showClassLevel !== false,
+        showBookingButton: savedSettings?.layout?.showBookingButton !== false,
+        showWaitlistOption: savedSettings?.layout?.showWaitlistOption !== false
+      },
+      appearance: {
+        primaryColor: savedSettings?.uiPreferences?.primaryColor || '#4A90A4',
+        backgroundColor: '#ffffff',
+        headerColor: '#f8f9fa',
+        borderRadius: 8,
+        fontFamily: 'default',
+        fontSize: savedSettings?.uiPreferences?.fontSize || 'medium'
+      },
+      calendar: {
+        weekStartsOn: savedSettings?.calendar?.weekStartsOn || 'sunday',
+        timeFormat: savedSettings?.calendar?.timeFormat || '12h',
+        showWeekNumbers: false,
+        eventDisplay: 'block',
+        minTime: '06:00',
+        maxTime: '22:00',
+        showWeekends: savedSettings?.calendar?.showWeekends !== false,
+        showEventTime: savedSettings?.calendar?.showEventTime || false
+      },
+      behavior: {
+        autoSave: true,
+        confirmBeforeDelete: true,
+        animationsEnabled: savedSettings?.uiPreferences?.animations !== false,
+        showTooltips: true,
+        language: savedSettings?.uiPreferences?.language || 'en'
+      },
+      uiPreferences: {
+        clickAction: savedSettings?.uiPreferences?.clickAction || 'tooltip'
+      },
+      eventCategories: savedSettings?.eventCategories || {
+        default: [],
+        custom: [],
+        showCategoryFilter: true
+      },
+      business: savedSettings?.business || {}
+    };
 
     res.json({
-      config: {
-        layout: config?.layout || defaultWidgetConfig.layout,
-        appearance: config?.appearance || defaultWidgetConfig.appearance,
-        calendar: config?.calendar || defaultWidgetConfig.calendar,
-        behavior: config?.behavior || defaultWidgetConfig.behavior,
-        widgetName: config?.widgetName || '',
-        premiumPlanName
-      },
+      settings,
       events: events || []
     });
   } catch (error) {
