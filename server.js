@@ -427,6 +427,19 @@ app.get('/api/widget-data', optionalWixAuth, async (req, res) => {
       || configs.find(c => c.tenantKey === instanceFallbackKey)
       || null;
 
+    // Determine premium plan - check Wix first, then DB override
+    const vendorProductId = req.wix?.vendorProductId || null;
+    let premiumPlanName = 'free';
+    if (vendorProductId) {
+      premiumPlanName = vendorProductId === 'true' ? 'light' : vendorProductId;
+    }
+
+    // If Wix says 'free' but we have a DB override, use the DB value
+    if (premiumPlanName === 'free' && savedSettings?.premiumPlanName && savedSettings.premiumPlanName !== 'free') {
+      premiumPlanName = savedSettings.premiumPlanName;
+      console.log('[Widget Data] Using DB override for premium plan:', premiumPlanName);
+    }
+
     // Build response in the same format as /settings/ui-preferences
     const settings = {
       layout: {
@@ -480,7 +493,9 @@ app.get('/api/widget-data', optionalWixAuth, async (req, res) => {
         custom: [],
         showCategoryFilter: true
       },
-      business: savedSettings?.business || {}
+      business: savedSettings?.business || {},
+      // Include premium plan name for widget visibility check
+      premiumPlanName: premiumPlanName
     };
 
     res.json({
@@ -498,11 +513,34 @@ app.get('/api/premium-status', optionalWixAuth, async (req, res) => {
   try {
     const vendorProductId = req.wix?.vendorProductId || null;
     const instanceId = req.wix?.instanceId || null;
+    const compId = req.wix?.compId || null;
 
     // Determine premium plan based on vendorProductId
     let premiumPlanName = 'free';
     if (vendorProductId) {
       premiumPlanName = vendorProductId === 'true' ? 'light' : vendorProductId;
+    }
+
+    // If Wix says 'free' but we have a DB override, use the DB value
+    // This allows admins to manually upgrade their plan in the database
+    if (premiumPlanName === 'free' && instanceId) {
+      const desiredKey = computeTenantKey(instanceId, compId);
+      const instanceFallbackKey = computeTenantKey(instanceId, null);
+
+      const keysToQuery = [desiredKey];
+      if (instanceFallbackKey !== desiredKey) {
+        keysToQuery.push(instanceFallbackKey);
+      }
+
+      const configs = await Settings.find({ tenantKey: { $in: keysToQuery } }).lean();
+      const savedSettings = configs.find(c => c.tenantKey === desiredKey)
+        || configs.find(c => c.tenantKey === instanceFallbackKey)
+        || null;
+
+      if (savedSettings?.premiumPlanName && savedSettings.premiumPlanName !== 'free') {
+        premiumPlanName = savedSettings.premiumPlanName;
+        console.log('[Premium Status] Using DB override for premium plan:', premiumPlanName);
+      }
     }
 
     res.json({
