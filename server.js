@@ -495,7 +495,7 @@ app.get('/api/widget-data', optionalWixAuth, async (req, res) => {
       },
       business: savedSettings?.business || {},
       // Include premium plan name for widget visibility check
-      premiumPlanName: premiumPlanName
+      premiumPlanName: 'lights'
     };
 
     res.json({
