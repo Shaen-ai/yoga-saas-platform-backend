@@ -339,9 +339,18 @@ app.get('/api/widgets', optionalWixAuth, async (req, res) => {
 // This replaces separate calls to /settings/ui-preferences and /events
 app.get('/api/widget-data', optionalWixAuth, async (req, res) => {
   try {
+    // Extract instanceId from decoded Authorization token (set by optionalWixAuth middleware)
+    // Extract compId from X-Wix-Comp-Id header (set by optionalWixAuth middleware)
     const instanceId = req.wix?.instanceId;
     const compId = req.wix?.compId;
     const tenantKey = req.tenantKey || 'default';
+
+    console.log('[Widget Data] Request headers:');
+    console.log('[Widget Data] - X-Wix-Comp-Id:', req.headers['x-wix-comp-id']);
+    console.log('[Widget Data] - Authorization:', req.headers.authorization ? 'present' : 'missing');
+    console.log('[Widget Data] Extracted values from middleware:');
+    console.log('[Widget Data] - instanceId (decoded from Authorization token):', instanceId);
+    console.log('[Widget Data] - compId (from X-Wix-Comp-Id header):', compId);
 
     // Default settings (same format as /settings/ui-preferences)
     const defaultSettings = {
@@ -405,6 +414,7 @@ app.get('/api/widget-data', optionalWixAuth, async (req, res) => {
       return;
     }
 
+    // Compute tenant keys using instanceId and compId
     const desiredKey = computeTenantKey(instanceId, compId);
     const instanceFallbackKey = computeTenantKey(instanceId, null);
 
@@ -414,6 +424,10 @@ app.get('/api/widget-data', optionalWixAuth, async (req, res) => {
       keysToQuery.push(instanceFallbackKey);
     }
 
+    console.log('[Widget Data] Querying database with:');
+    console.log('[Widget Data] - Settings query keys:', keysToQuery);
+    console.log('[Widget Data] - Events query: { instanceId:', instanceId, ', compId:', compId, '}');
+
     // Run settings and events queries in parallel for maximum performance
     const [configs, events] = await Promise.all([
       Settings.find({ tenantKey: { $in: keysToQuery } }).lean(),
@@ -422,10 +436,21 @@ app.get('/api/widget-data', optionalWixAuth, async (req, res) => {
         : Promise.resolve([])
     ]);
 
+    console.log('[Widget Data] Database results:');
+    console.log('[Widget Data] - Settings found:', configs.length);
+    console.log('[Widget Data] - Events found:', events.length);
+
     // Find the best matching config
     const savedSettings = configs.find(c => c.tenantKey === desiredKey)
       || configs.find(c => c.tenantKey === instanceFallbackKey)
       || null;
+
+    console.log('[Widget Data] Settings selection:');
+    console.log('[Widget Data] - Using settings with tenantKey:', savedSettings?.tenantKey || 'none (using defaults)');
+    console.log('[Widget Data] - Settings matched by:',
+      savedSettings?.tenantKey === desiredKey ? 'exact match (instanceId + compId)' :
+      savedSettings?.tenantKey === instanceFallbackKey ? 'fallback (instanceId only)' :
+      'no match');
 
     // Determine premium plan - check Wix first, then DB override
     const vendorProductId = req.wix?.vendorProductId || null;
@@ -495,7 +520,7 @@ app.get('/api/widget-data', optionalWixAuth, async (req, res) => {
       },
       business: savedSettings?.business || {},
       // Include premium plan name for widget visibility check
-      premiumPlanName: 'lights'
+      premiumPlanName: premiumPlanName
     };
 
     res.json({
