@@ -452,17 +452,24 @@ app.get('/api/widget-data', optionalWixAuth, async (req, res) => {
       savedSettings?.tenantKey === instanceFallbackKey ? 'fallback (instanceId only)' :
       'no match');
 
-    // Determine premium plan - check Wix first, then DB override
+    // Determine premium plan - prefer DB value, fallback to Wix
     const vendorProductId = req.wix?.vendorProductId || null;
     let premiumPlanName = 'free';
-    if (vendorProductId) {
-      premiumPlanName = vendorProductId === 'true' ? 'light' : vendorProductId;
-    }
 
-    // If Wix says 'free' but we have a DB override, use the DB value
-    if (premiumPlanName === 'free' && savedSettings?.premiumPlanName && savedSettings.premiumPlanName !== 'free') {
+    console.log('[Widget Data] Premium plan determination:');
+    console.log('[Widget Data] - Wix vendorProductId:', vendorProductId);
+    console.log('[Widget Data] - DB premiumPlanName:', savedSettings?.premiumPlanName);
+
+    // First, check if we have a DB value (manual override takes priority)
+    if (savedSettings?.premiumPlanName) {
       premiumPlanName = savedSettings.premiumPlanName;
-      console.log('[Widget Data] Using DB override for premium plan:', premiumPlanName);
+      console.log('[Widget Data] ✅ Using DB premium plan:', premiumPlanName);
+    } else if (vendorProductId) {
+      // Fallback to Wix vendorProductId if no DB value
+      premiumPlanName = vendorProductId === 'true' ? 'light' : vendorProductId;
+      console.log('[Widget Data] - Using Wix vendorProductId:', premiumPlanName);
+    } else {
+      console.log('[Widget Data] - Using default (free)');
     }
 
     // Build response in the same format as /settings/ui-preferences
@@ -540,15 +547,11 @@ app.get('/api/premium-status', optionalWixAuth, async (req, res) => {
     const instanceId = req.wix?.instanceId || null;
     const compId = req.wix?.compId || null;
 
-    // Determine premium plan based on vendorProductId
+    // Determine premium plan - prefer DB value, fallback to Wix
     let premiumPlanName = 'free';
-    if (vendorProductId) {
-      premiumPlanName = vendorProductId === 'true' ? 'light' : vendorProductId;
-    }
 
-    // If Wix says 'free' but we have a DB override, use the DB value
-    // This allows admins to manually upgrade their plan in the database
-    if (premiumPlanName === 'free' && instanceId) {
+    // Check DB first (manual override takes priority)
+    if (instanceId) {
       const desiredKey = computeTenantKey(instanceId, compId);
       const instanceFallbackKey = computeTenantKey(instanceId, null);
 
@@ -562,10 +565,17 @@ app.get('/api/premium-status', optionalWixAuth, async (req, res) => {
         || configs.find(c => c.tenantKey === instanceFallbackKey)
         || null;
 
-      if (savedSettings?.premiumPlanName && savedSettings.premiumPlanName !== 'free') {
+      if (savedSettings?.premiumPlanName) {
         premiumPlanName = savedSettings.premiumPlanName;
-        console.log('[Premium Status] Using DB override for premium plan:', premiumPlanName);
+        console.log('[Premium Status] ✅ Using DB premium plan:', premiumPlanName);
+      } else if (vendorProductId) {
+        // Fallback to Wix vendorProductId if no DB value
+        premiumPlanName = vendorProductId === 'true' ? 'light' : vendorProductId;
+        console.log('[Premium Status] - Using Wix vendorProductId:', premiumPlanName);
       }
+    } else if (vendorProductId) {
+      // No instanceId, use Wix value
+      premiumPlanName = vendorProductId === 'true' ? 'light' : vendorProductId;
     }
 
     res.json({
