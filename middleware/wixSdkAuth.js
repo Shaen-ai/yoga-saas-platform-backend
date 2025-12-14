@@ -57,7 +57,9 @@ const verifyAccessToken = async (accessToken, appId, appSecret) => {
     const instanceId = tokenInfoResponse.data.instanceId;
 
     if (!instanceId) {
-      throw new Error('No instanceId found in token response');
+      // Token is valid but no instanceId (happens in editor/preview mode)
+      console.log('[WixSDK] Token valid but no instanceId (likely editor mode)');
+      return null;
     }
 
     // Step 2: Create elevated client to get full app instance data
@@ -89,7 +91,8 @@ const verifyAccessToken = async (accessToken, appId, appSecret) => {
     return result;
   } catch (error) {
     console.error('[WixSDK] Token verification failed:', error.message);
-    throw error;
+    // Return null instead of throwing to allow graceful degradation
+    return null;
   }
 };
 
@@ -144,42 +147,63 @@ const verifyWixInstance = async (req, res, next) => {
  * Use this for endpoints that should work both with and without Wix authentication
  */
 const optionalWixAuth = async (req, res, next) => {
+  // Extract compId first (always available from headers)
+  const compId = extractCompId(req);
+
   try {
     const authHeader = req.headers.authorization || '';
     const accessToken = authHeader.replace('Bearer ', '');
 
     console.log('[optionalWixAuth] Auth header present:', !!authHeader);
+    console.log('[optionalWixAuth] CompId from headers:', compId);
 
     if (!accessToken) {
       console.log('[optionalWixAuth] No access token, skipping auth');
+      // Still set compId if available
+      if (compId) {
+        req.wix = { compId, instanceId: null, vendorProductId: null };
+      }
       return next();
     }
 
     const WIX_APP_ID = process.env.WIX_APP_ID;
     const WIX_APP_SECRET = process.env.WIX_APP_SECRET;
-    const compId = extractCompId(req);
 
     console.log('[optionalWixAuth] App credentials present:', !!WIX_APP_ID && !!WIX_APP_SECRET);
 
     if (!WIX_APP_ID || !WIX_APP_SECRET) {
       console.log('[optionalWixAuth] Missing app credentials, skipping auth');
+      // Still set compId if available
+      if (compId) {
+        req.wix = { compId, instanceId: null, vendorProductId: null };
+      }
       return next();
     }
 
     console.log('[optionalWixAuth] Verifying token...');
     const wixData = await verifyAccessToken(accessToken, WIX_APP_ID, WIX_APP_SECRET);
-    console.log('[optionalWixAuth] Token verified, instanceId:', wixData.instanceId);
 
-    req.wix = {
-      instanceId: wixData.instanceId,
-      appDefId: wixData.appDefId,
-      vendorProductId: wixData.vendorProductId,
-      compId,
-      decodedToken: wixData.instanceData,
-    };
+    if (wixData) {
+      console.log('[optionalWixAuth] Token verified, instanceId:', wixData.instanceId);
+      req.wix = {
+        instanceId: wixData.instanceId,
+        appDefId: wixData.appDefId,
+        vendorProductId: wixData.vendorProductId,
+        compId,
+        decodedToken: wixData.instanceData,
+      };
+    } else {
+      // Token verification returned null (editor mode or invalid token)
+      console.log('[optionalWixAuth] Token verification returned null (editor mode), using compId only');
+      req.wix = { compId, instanceId: null, vendorProductId: null };
+    }
   } catch (error) {
     console.error('[optionalWixAuth] Token verification failed:', error.message);
-    // Token invalid, continue without Wix data
+    // Token invalid, but still set compId if available (for editor mode)
+    if (compId) {
+      req.wix = { compId, instanceId: null, vendorProductId: null };
+      console.log('[optionalWixAuth] Set compId despite token failure:', compId);
+    }
   }
 
   next();
