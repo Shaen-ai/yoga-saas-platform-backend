@@ -2,9 +2,10 @@ const express = require('express');
 const router = express.Router();
 const Event = require('../models/Event');
 const YogaPlan = require('../models/YogaPlan');
+const { optionalWixAuth } = require('../middleware/wixSdkAuth');
 
 // Get dashboard analytics
-router.get('/dashboard', async (req, res) => {
+router.get('/dashboard', optionalWixAuth, async (req, res) => {
   try {
     // Calculate analytics data
     const today = new Date();
@@ -19,9 +20,23 @@ router.get('/dashboard', async (req, res) => {
     let events = [];
 
     if (mongoose.connection.readyState === 1) {
-      // Get actual data from MongoDB
-      plans = await YogaPlan.find({ tenantKey });
-      events = await Event.find({ tenantKey });
+      // Build query - filter by instanceId if authenticated
+      const baseQuery = { tenantKey };
+
+      // If user is authenticated via Wix, filter by their instanceId
+      if (req.wix && req.wix.instanceId) {
+        baseQuery.instanceId = req.wix.instanceId;
+        console.log('Analytics - Filtering by instanceId:', req.wix.instanceId);
+      } else {
+        console.log('Analytics - No Wix auth, showing all data for tenant');
+      }
+
+      // Get actual data from MongoDB with instanceId filter
+      plans = await YogaPlan.find(baseQuery);
+      events = await Event.find(baseQuery);
+
+      console.log('Analytics - Filtered plans found:', plans.length);
+      console.log('Analytics - Filtered events found:', events.length);
     } else {
       console.log('GET /analytics/dashboard - Database not connected, using empty data');
     }
@@ -46,16 +61,22 @@ router.get('/dashboard', async (req, res) => {
 
     // Debug logging
     console.log('Analytics - Tenant Key:', tenantKey);
+    console.log('Analytics - InstanceId filter:', req.wix?.instanceId || 'none');
     console.log('Analytics - Registered users in usersStore:', users.length);
     console.log('Analytics - Unique event participants:', uniqueParticipants.size);
+    console.log('Analytics - Plans found:', plans.length);
     console.log('Analytics - Events found:', events.length);
 
     // Calculate real counts
     const pendingCount = plans.filter(plan => plan.status === 'pending_approval').length;
     const totalPlans = plans.length;
     const totalEvents = events.length;
-    // Count both registered users AND unique event participants as "Active Members"
-    const totalUsers = Math.max(users.length, uniqueParticipants.size);
+
+    // For totalUsers: if filtering by instanceId, use only unique participants from filtered events
+    // Otherwise, count both registered users AND unique event participants
+    const totalUsers = (req.wix && req.wix.instanceId)
+      ? uniqueParticipants.size
+      : Math.max(users.length, uniqueParticipants.size);
 
     // Calculate some mock revenue based on events
     const baseRevenue = events.length * 50; // $50 per event average
