@@ -313,4 +313,45 @@ router.post('/ui-preferences', optionalWixAuth, async (req, res) => {
   }
 });
 
+router.put('/ui-preferences', optionalWixAuth, async (req, res) => {
+  try {
+    const { instanceId, premiumPlanName } = req.body;
+    const mongoose = require('mongoose');
+
+    console.log('PUT /ui-preferences - instanceId:', instanceId, 'premiumPlanName:', premiumPlanName);
+
+    // Validate required fields
+    if (!instanceId) {
+      return res.status(400).json({ error: 'instanceId is required' });
+    }
+
+    if (!premiumPlanName) {
+      return res.status(400).json({ error: 'premiumPlanName is required' });
+    }
+
+    // Check if database is available
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ error: 'Database not available' });
+    }
+
+    // Update all documents with the given instanceId
+    const result = await Settings.updateMany(
+      { instanceId: instanceId },
+      { $set: { premiumPlanName: premiumPlanName } }
+    );
+
+    console.log('PUT /ui-preferences - Updated', result.modifiedCount, 'documents');
+
+    res.json({
+      success: true,
+      message: `Updated ${result.modifiedCount} document(s)`,
+      matchedCount: result.matchedCount,
+      modifiedCount: result.modifiedCount
+    });
+  } catch (error) {
+    console.error('Error updating premium plan name:', error);
+    res.status(500).json({ error: 'Failed to update premium plan name', message: error.message });
+  }
+});
+
 module.exports = router;
