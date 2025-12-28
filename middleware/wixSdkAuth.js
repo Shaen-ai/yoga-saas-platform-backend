@@ -10,27 +10,45 @@ const tokenCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
  * Extract component ID from request headers, query params, or body
  */
 const extractCompId = (req) => {
+  // Debug: Log all request details
+  console.log('[extractCompId] ========== DEBUG ==========');
+  console.log('[extractCompId] Request URL:', req.url);
+  console.log('[extractCompId] Request method:', req.method);
+  console.log('[extractCompId] All headers:', JSON.stringify(req.headers, null, 2));
+
+  // Check x-wix-comp-id header (Express normalizes header names to lowercase)
   const headerCompId = req.headers['x-wix-comp-id'];
-  if (typeof headerCompId === 'string') {
-    return headerCompId;
+  console.log('[extractCompId] x-wix-comp-id header value:', headerCompId, '(type:', typeof headerCompId, ')');
+
+  if (typeof headerCompId === 'string' && headerCompId.trim()) {
+    console.log('[extractCompId] ✅ Found comp-id in header:', headerCompId);
+    return headerCompId.trim();
   }
-  if (Array.isArray(headerCompId)) {
-    return headerCompId[0];
+  if (Array.isArray(headerCompId) && headerCompId.length > 0 && headerCompId[0]) {
+    console.log('[extractCompId] ✅ Found comp-id in header (array):', headerCompId[0]);
+    return headerCompId[0].trim();
   }
 
+  // Check query params as fallback
   const queryCompId = req.query.compId;
   const queryCompIdAlt = req.query.comp_id || req.query['comp-id'];
-  if (typeof queryCompId === 'string') {
-    return queryCompId;
+  if (typeof queryCompId === 'string' && queryCompId.trim()) {
+    console.log('[extractCompId] ✅ Found comp-id in query (compId):', queryCompId);
+    return queryCompId.trim();
   }
-  if (typeof queryCompIdAlt === 'string') {
-    return queryCompIdAlt;
-  }
-
-  if (req.body && typeof req.body.compId === 'string') {
-    return req.body.compId;
+  if (typeof queryCompIdAlt === 'string' && queryCompIdAlt.trim()) {
+    console.log('[extractCompId] ✅ Found comp-id in query (alt):', queryCompIdAlt);
+    return queryCompIdAlt.trim();
   }
 
+  // Check body as last fallback
+  if (req.body && typeof req.body.compId === 'string' && req.body.compId.trim()) {
+    console.log('[extractCompId] ✅ Found comp-id in body:', req.body.compId);
+    return req.body.compId.trim();
+  }
+
+  console.log('[extractCompId] ❌ No comp-id found anywhere');
+  console.log('[extractCompId] ================================');
   return undefined;
 };
 
@@ -57,9 +75,7 @@ const verifyAccessToken = async (accessToken, appId, appSecret) => {
     const instanceId = tokenInfoResponse.data.instanceId;
 
     if (!instanceId) {
-      // Token is valid but no instanceId (happens in editor/preview mode)
-      console.log('[WixSDK] Token valid but no instanceId (likely editor mode)');
-      return null;
+      throw new Error('No instanceId found in token response');
     }
 
     // Step 2: Create elevated client to get full app instance data
@@ -91,8 +107,7 @@ const verifyAccessToken = async (accessToken, appId, appSecret) => {
     return result;
   } catch (error) {
     console.error('[WixSDK] Token verification failed:', error.message);
-    // Return null instead of throwing to allow graceful degradation
-    return null;
+    throw error;
   }
 };
 
@@ -145,23 +160,25 @@ const verifyWixInstance = async (req, res, next) => {
 /**
  * Optional middleware - only verifies token if present
  * Use this for endpoints that should work both with and without Wix authentication
+ *
+ * NEW: Also extracts comp-id even without auth (for editor mode)
  */
 const optionalWixAuth = async (req, res, next) => {
-  // Extract compId first (always available from headers)
+  // Extract compId FIRST, before try block, so it's available in catch
   const compId = extractCompId(req);
 
   try {
     const authHeader = req.headers.authorization || '';
     const accessToken = authHeader.replace('Bearer ', '');
 
-    console.log('[optionalWixAuth] Auth header present:', !!authHeader);
-    console.log('[optionalWixAuth] CompId from headers:', compId);
-
+    // If no auth token, but comp-id exists (editor mode), attach comp-id only
     if (!accessToken) {
-      console.log('[optionalWixAuth] No access token, skipping auth');
-      // Still set compId if available
       if (compId) {
-        req.wix = { compId, instanceId: null, vendorProductId: null };
+        req.wix = {
+          instanceId: '', // Empty instanceId for editor mode
+          compId,
+          decodedToken: null,
+        };
       }
       return next();
     }
@@ -169,40 +186,36 @@ const optionalWixAuth = async (req, res, next) => {
     const WIX_APP_ID = process.env.WIX_APP_ID;
     const WIX_APP_SECRET = process.env.WIX_APP_SECRET;
 
-    console.log('[optionalWixAuth] App credentials present:', !!WIX_APP_ID && !!WIX_APP_SECRET);
-
     if (!WIX_APP_ID || !WIX_APP_SECRET) {
-      console.log('[optionalWixAuth] Missing app credentials, skipping auth');
-      // Still set compId if available
+      // Still attach comp-id if available
       if (compId) {
-        req.wix = { compId, instanceId: null, vendorProductId: null };
+        req.wix = {
+          instanceId: '',
+          compId,
+          decodedToken: null,
+        };
       }
       return next();
     }
 
-    console.log('[optionalWixAuth] Verifying token...');
     const wixData = await verifyAccessToken(accessToken, WIX_APP_ID, WIX_APP_SECRET);
 
-    if (wixData) {
-      console.log('[optionalWixAuth] Token verified, instanceId:', wixData.instanceId);
-      req.wix = {
-        instanceId: wixData.instanceId,
-        appDefId: wixData.appDefId,
-        vendorProductId: wixData.vendorProductId,
-        compId,
-        decodedToken: wixData.instanceData,
-      };
-    } else {
-      // Token verification returned null (editor mode or invalid token)
-      console.log('[optionalWixAuth] Token verification returned null (editor mode), using compId only');
-      req.wix = { compId, instanceId: null, vendorProductId: null };
-    }
-  } catch (error) {
-    console.error('[optionalWixAuth] Token verification failed:', error.message);
-    // Token invalid, but still set compId if available (for editor mode)
+    req.wix = {
+      instanceId: wixData.instanceId,
+      appDefId: wixData.appDefId,
+      vendorProductId: wixData.vendorProductId,
+      compId,
+      decodedToken: wixData.instanceData,
+    };
+  } catch {
+    // Token verification failed (editor mode with invalid token)
+    // Fallback to compId-only mode
     if (compId) {
-      req.wix = { compId, instanceId: null, vendorProductId: null };
-      console.log('[optionalWixAuth] Set compId despite token failure:', compId);
+      req.wix = {
+        instanceId: '',
+        compId,
+        decodedToken: null,
+      };
     }
   }
 

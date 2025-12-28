@@ -11,12 +11,10 @@
     "postinstall": "npm ls mongoose || npm rebuild mongoose"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.24.0",
     "@wix/api-client": "^1.14.1",
+    "@wix/app-management": "^1.0.0",
     "@wix/identity": "^1.0.175",
     "@wix/sdk": "^1.17.1",
-    "@wix/app-management": "^1.0.0",
-    "node-cache": "^5.1.2",
     "axios": "^1.12.2",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
@@ -26,8 +24,8 @@
     "helmet": "^7.0.0",
     "jsonwebtoken": "^9.0.1",
     "mongoose": "^7.4.0",
+    "node-cache": "^5.1.2",
     "nodemailer": "^6.10.1",
-    "openai": "^4.0.0",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1"
   },

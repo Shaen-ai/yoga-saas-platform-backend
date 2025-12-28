@@ -121,18 +121,20 @@ connectDB();
 
 // Routes
 // Note: /api/auth route removed - using Wix SDK authentication instead
-app.use('/api/users', require('./routes/users'));
-app.use('/api/instructors', require('./routes/instructors'));
-app.use('/api/yoga-plans', require('./routes/yoga-plans'));
-app.use('/api/ai', require('./routes/ai-generation'));
-app.use('/api/events', require('./routes/events'));
-app.use('/api/settings', require('./routes/settings'));
-app.use('/api/analytics', require('./routes/analytics'));
-app.use('/api/payment-settings', require('./routes/payment-settings'));
-app.use('/api/notifications', require('./routes/notifications'));
+// Apply optional Wix authentication to all API routes
+// This will verify the token if present, but allow requests without it in development
+app.use('/api/users', optionalWixAuth, require('./routes/users'));
+app.use('/api/instructors', optionalWixAuth, require('./routes/instructors'));
+app.use('/api/yoga-plans', optionalWixAuth, require('./routes/yoga-plans'));
+app.use('/api/ai', optionalWixAuth, require('./routes/ai-generation'));
+app.use('/api/events', optionalWixAuth, require('./routes/events'));
+app.use('/api/settings', optionalWixAuth, require('./routes/settings'));
+app.use('/api/analytics', optionalWixAuth, require('./routes/analytics'));
+app.use('/api/payment-settings', optionalWixAuth, require('./routes/payment-settings'));
+app.use('/api/notifications', optionalWixAuth, require('./routes/notifications'));
 // PayPal API routes commented out - using simplified PayPal checkout links instead
 // Uncomment if implementing Stripe or other API-based payment integrations
-// app.use('/api/payments', require('./routes/payments'));
+// app.use('/api/payments', optionalWixAuth, require('./routes/payments'));
 
 /**
  * @swagger
@@ -405,14 +407,105 @@ app.get('/api/widget-data', optionalWixAuth, async (req, res) => {
       }
     };
 
-    // If no instanceId, return defaults without querying DB
-    if (!instanceId) {
+    // CASE 1: No instanceId AND no compId - return default data
+    if ((!instanceId || instanceId === '') && (!compId || compId === '')) {
+      console.log('[Widget Data] CASE 1: No auth, no compId - returning default data');
       res.json({
         settings: defaultSettings,
         events: []
       });
       return;
     }
+
+    // CASE 2: Has compId but NO instanceId (EDITOR MODE)
+    // Fetch data by compId only, without instance authentication
+    // instanceId will be empty string '' in editor mode, compId should be the actual ID
+    if ((!instanceId || instanceId === '') && compId && compId !== '') {
+      console.log('[Widget Data] CASE 2: Editor mode - compId without auth:', compId);
+
+      // Find ANY settings with this compId (across all instances)
+      // This allows editor to see the widget's data without authentication
+      const [config, events] = await Promise.all([
+        Settings.findOne({ compId }).lean(),
+        Event.find({ compId, isVisible: { $ne: false } }).sort({ start: 1 }).lean()
+      ]);
+
+      console.log('[Widget Data] CASE 2 results - config found:', !!config, 'events found:', events.length);
+
+      // If no config found, return defaults
+      if (!config) {
+        res.json({
+          settings: defaultSettings,
+          events: []
+        });
+        return;
+      }
+
+      // Return actual settings from DB
+      const settings = {
+        layout: {
+          defaultView: config.widget?.defaultView || 'yogaClasses',
+          defaultMode: config.layout?.defaultMode || 'calendar',
+          defaultCalendarLayout: config.layout?.defaultCalendarLayout || config.calendar?.defaultView || 'month',
+          calendarView: config.layout?.calendarView || config.calendar?.defaultView || 'month',
+          showModeSwitcher: config.layout?.showModeSwitcher !== false,
+          showCalendarHeader: config.layout?.showCalendarHeader !== false,
+          headerTitle: config.widget?.title || 'Classes',
+          showFooter: config.widget?.showFooter || false,
+          compactMode: config.uiPreferences?.compactMode || false,
+          showCreatePlanOption: config.layout?.showCreatePlanOption !== false,
+          showYogaClassesOption: config.layout?.showYogaClassesOption !== false,
+          showInstructorInfo: config.layout?.showInstructorInfo !== false,
+          showClassDuration: config.layout?.showClassDuration !== false,
+          showClassLevel: config.layout?.showClassLevel !== false,
+          showBookingButton: config.layout?.showBookingButton !== false,
+          showWaitlistOption: config.layout?.showWaitlistOption !== false
+        },
+        appearance: {
+          primaryColor: config.uiPreferences?.primaryColor || '#4A90A4',
+          backgroundColor: '#ffffff',
+          headerColor: '#f8f9fa',
+          borderRadius: 8,
+          fontFamily: 'default',
+          fontSize: config.uiPreferences?.fontSize || 'medium'
+        },
+        calendar: {
+          weekStartsOn: config.calendar?.weekStartsOn || 'sunday',
+          timeFormat: config.calendar?.timeFormat || '12h',
+          showWeekNumbers: false,
+          eventDisplay: 'block',
+          minTime: '06:00',
+          maxTime: '22:00',
+          showWeekends: config.calendar?.showWeekends !== false,
+          showEventTime: config.calendar?.showEventTime || false
+        },
+        behavior: {
+          autoSave: true,
+          confirmBeforeDelete: true,
+          animationsEnabled: config.uiPreferences?.animations !== false,
+          showTooltips: true,
+          language: config.uiPreferences?.language || 'en'
+        },
+        uiPreferences: {
+          clickAction: config.uiPreferences?.clickAction || 'tooltip'
+        },
+        eventCategories: config.eventCategories || {
+          default: [],
+          custom: [],
+          showCategoryFilter: true
+        },
+        business: config.business || {},
+        premiumPlanName: config.premiumPlanName || 'free'
+      };
+
+      res.json({
+        settings,
+        events: events || []
+      });
+      return;
+    }
+
+    // CASE 3: Has instanceId (authenticated request - published site)
 
     // Compute tenant keys using instanceId and compId
     const desiredKey = computeTenantKey(instanceId, compId);
