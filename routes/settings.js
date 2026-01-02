@@ -207,7 +207,8 @@ router.get('/ui-preferences', optionalWixAuth, async (req, res) => {
     },
     uiPreferences: {
       clickAction: globalSettings.uiPreferences?.clickAction || 'tooltip'
-    }
+    },
+    premiumPlanName: globalSettings.premiumPlanName || 'free'
   };
 
     // Add auth info to response (used by settings panel for dashboard URL)
