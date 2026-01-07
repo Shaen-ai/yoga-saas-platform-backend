@@ -534,9 +534,28 @@ app.get('/api/widget-data', optionalWixAuth, async (req, res) => {
     console.log('[Widget Data] - Events found:', events.length);
 
     // Find the best matching config
-    const savedSettings = configs.find(c => c.tenantKey === desiredKey)
+    let savedSettings = configs.find(c => c.tenantKey === desiredKey)
       || configs.find(c => c.tenantKey === instanceFallbackKey)
       || null;
+
+    // FALLBACK: If no settings found by tenantKey, try querying by instanceId or compId
+    if (!savedSettings && (instanceId || compId)) {
+      console.log('[Widget Data] No settings found by tenantKey, trying fallback queries...');
+
+      if (instanceId) {
+        savedSettings = await Settings.findOne({ instanceId }).lean();
+        if (savedSettings) {
+          console.log('[Widget Data] ✅ Found settings by instanceId:', instanceId);
+        }
+      }
+
+      if (!savedSettings && compId) {
+        savedSettings = await Settings.findOne({ compId }).lean();
+        if (savedSettings) {
+          console.log('[Widget Data] ✅ Found settings by compId:', compId);
+        }
+      }
+    }
 
     console.log('[Widget Data] Settings selection:');
     console.log('[Widget Data] - Using settings with tenantKey:', savedSettings?.tenantKey || 'none (using defaults)');
