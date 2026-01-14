@@ -557,6 +557,24 @@ app.get('/api/widget-data', optionalWixAuth, async (req, res) => {
       }
     }
 
+    // AUTO-CREATE: If we have both compId and instanceId but no document exists, create one
+    if (!savedSettings && compId && instanceId) {
+      console.log('[Widget Data] 🆕 No settings found - creating new document for compId:', compId, 'instanceId:', instanceId);
+      try {
+        const newSettings = await Settings.create({
+          tenantKey: desiredKey,
+          compId,
+          instanceId,
+          premiumPlanName: 'free'
+        });
+        savedSettings = newSettings.toObject();
+        console.log('[Widget Data] ✅ Created new settings document with _id:', savedSettings._id);
+      } catch (createError) {
+        console.error('[Widget Data] ⚠️ Failed to create settings document:', createError.message);
+        // Continue with defaults if create fails
+      }
+    }
+
     console.log('[Widget Data] Settings selection:');
     console.log('[Widget Data] - Using settings with tenantKey:', savedSettings?.tenantKey || 'none (using defaults)');
     console.log('[Widget Data] - Settings matched by:',

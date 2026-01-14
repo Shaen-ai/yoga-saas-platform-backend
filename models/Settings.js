@@ -98,8 +98,9 @@ const settingsSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Compound unique index: each compId should have its own settings document
-// If compId is null/undefined, fall back to tenantKey-only uniqueness
-settingsSchema.index({ tenantKey: 1, compId: 1 }, { unique: true, sparse: true });
+// Index for efficient queries by tenantKey + compId
+// Note: We handle uniqueness in application code, not via unique index
+// because MongoDB's sparse unique indexes don't work well with null values in compound indexes
+settingsSchema.index({ tenantKey: 1, compId: 1 });
 
 module.exports = mongoose.model('Settings', settingsSchema);

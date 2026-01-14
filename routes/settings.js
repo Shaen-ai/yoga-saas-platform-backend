@@ -178,6 +178,18 @@ router.get('/ui-preferences', optionalWixAuth, async (req, res) => {
       if (compId) {
         savedSettings = await Settings.findOne({ tenantKey, compId });
         console.log('GET /ui-preferences - Queried by compId:', compId, 'Found:', !!savedSettings);
+        
+        // AUTO-CREATE: If we have both compId and instanceId but no document exists, create one
+        if (!savedSettings && instanceId) {
+          console.log('GET /ui-preferences - Creating new settings document for compId:', compId, 'instanceId:', instanceId);
+          savedSettings = await Settings.create({
+            tenantKey,
+            compId,
+            instanceId,
+            premiumPlanName: 'free'
+          });
+          console.log('GET /ui-preferences - Created new document with _id:', savedSettings._id);
+        }
       }
       // Fall back to tenantKey-only query if no compId or no settings found
       if (!savedSettings) {
@@ -269,85 +281,93 @@ router.post('/ui-preferences', optionalWixAuth, async (req, res) => {
       return res.json({ success: true, message: 'Database not connected - changes not persisted', settings: req.body });
     }
 
-    // Load existing settings from DB or create new
-    // IMPORTANT: Query by BOTH tenantKey AND compId to get/create the correct document
-    let settings = null;
-    
+    // Build the query and update objects
+    const query = { tenantKey };
     if (compId) {
-      // If compId is provided, look for settings specific to this widget instance
-      settings = await Settings.findOne({ tenantKey, compId });
-      console.log('POST /ui-preferences - Looking for existing settings with compId:', compId, 'Found:', !!settings);
-      
-      if (!settings) {
-        // Create NEW document for this compId (don't overwrite other widgets' settings)
-        settings = new Settings({ tenantKey, compId });
-        console.log('POST /ui-preferences - Creating NEW settings document for compId:', compId);
-      }
+      query.compId = compId;
     } else {
-      // No compId - use legacy tenantKey-only lookup (backwards compatibility)
-      settings = await Settings.findOne({ tenantKey, compId: { $exists: false } });
-      if (!settings) {
-        settings = new Settings({ tenantKey });
-        console.log('POST /ui-preferences - Creating NEW settings document (no compId)');
+      // For legacy support: find documents without compId (null or doesn't exist)
+      query.$or = [
+        { compId: null },
+        { compId: { $exists: false } }
+      ];
+    }
+
+    // Build the update object with $set for nested fields
+    const updateObj = {
+      $set: {
+        tenantKey,
+        updatedAt: new Date()
+      },
+      $setOnInsert: {
+        createdAt: new Date()
       }
+    };
+
+    // Set compId if provided
+    if (compId) {
+      updateObj.$set.compId = compId;
     }
 
-    // Always update instanceId from Wix auth if available
+    // Set instanceId if available
     if (instanceId) {
-      settings.instanceId = instanceId;
+      updateObj.$set.instanceId = instanceId;
     }
 
-    // Only update individual fields that are provided (only store edited values)
+    // Update layout fields
     if (req.body.layout) {
-      if (!settings.layout) settings.layout = {};
       Object.keys(req.body.layout).forEach(key => {
-        settings.layout[key] = req.body.layout[key];
+        updateObj.$set[`layout.${key}`] = req.body.layout[key];
       });
-      settings.markModified('layout');
     }
 
+    // Update appearance and uiPreferences fields
     if (req.body.appearance) {
-      if (!settings.appearance) settings.appearance = {};
-      if (!settings.uiPreferences) settings.uiPreferences = {};
-
       Object.keys(req.body.appearance).forEach(key => {
-        settings.appearance[key] = req.body.appearance[key];
+        updateObj.$set[`appearance.${key}`] = req.body.appearance[key];
         // Also save primaryColor to uiPreferences for consistency
         if (key === 'primaryColor') {
-          settings.uiPreferences.primaryColor = req.body.appearance[key];
+          updateObj.$set['uiPreferences.primaryColor'] = req.body.appearance[key];
         }
       });
-      settings.markModified('appearance');
-      settings.markModified('uiPreferences');
     }
 
+    // Update uiPreferences fields
     if (req.body.uiPreferences) {
-      if (!settings.uiPreferences) settings.uiPreferences = {};
       Object.keys(req.body.uiPreferences).forEach(key => {
-        settings.uiPreferences[key] = req.body.uiPreferences[key];
+        updateObj.$set[`uiPreferences.${key}`] = req.body.uiPreferences[key];
       });
-      settings.markModified('uiPreferences');
     }
 
+    // Update calendar fields
     if (req.body.calendar) {
-      if (!settings.calendar) settings.calendar = {};
       Object.keys(req.body.calendar).forEach(key => {
-        settings.calendar[key] = req.body.calendar[key];
+        updateObj.$set[`calendar.${key}`] = req.body.calendar[key];
       });
-      settings.markModified('calendar');
     }
 
+    // Update behavior fields
     if (req.body.behavior) {
-      if (!settings.behavior) settings.behavior = {};
       Object.keys(req.body.behavior).forEach(key => {
-        settings.behavior[key] = req.body.behavior[key];
+        updateObj.$set[`behavior.${key}`] = req.body.behavior[key];
       });
-      settings.markModified('behavior');
     }
 
-    // Save to MongoDB (only stores fields that have values)
-    await settings.save();
+    console.log('POST /ui-preferences - Query:', JSON.stringify(query));
+    console.log('POST /ui-preferences - Update fields:', Object.keys(updateObj.$set));
 
+    // Use findOneAndUpdate with upsert for atomic operation
+    const settings = await Settings.findOneAndUpdate(
+      query,
+      updateObj,
+      { 
+        upsert: true, 
+        new: true,
+        runValidators: true
+      }
+    );
+
+    console.log('POST /ui-preferences - Settings saved/updated, _id:', settings._id);
     res.json({ success: true, settings });
   } catch (error) {
     console.error('Error saving settings:', error);
