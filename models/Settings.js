@@ -4,8 +4,8 @@ const settingsSchema = new mongoose.Schema({
   tenantKey: {
     type: String,
     required: true,
-    unique: true,
-    default: 'default'
+    default: 'default',
+    index: true
   },
 
   // Wix instance identification
@@ -13,9 +13,13 @@ const settingsSchema = new mongoose.Schema({
     type: String,
     index: true
   },
+  
+  // Component ID - unique identifier for each widget instance
+  // This is the PRIMARY key for differentiating settings between widgets
   compId: {
     type: String,
-    index: true
+    index: true,
+    sparse: true  // Allow null values but enforce uniqueness when present
   },
 
   // Widget name (user-defined)
@@ -93,5 +97,9 @@ const settingsSchema = new mongoose.Schema({
 }, {
   timestamps: true
 });
+
+// Compound unique index: each compId should have its own settings document
+// If compId is null/undefined, fall back to tenantKey-only uniqueness
+settingsSchema.index({ tenantKey: 1, compId: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('Settings', settingsSchema);

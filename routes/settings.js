@@ -64,7 +64,8 @@ const defaultSettings = {
 router.get('/', async (req, res) => {
   try {
     const tenantKey = req.tenantKey || 'default';
-    console.log('GET /settings - Tenant:', tenantKey);
+    const compId = req.wix?.compId || req.headers['x-wix-comp-id'] || null;
+    console.log('GET /settings - Tenant:', tenantKey, 'compId:', compId);
 
     // Load settings from DB
     const mongoose = require('mongoose');
@@ -72,7 +73,14 @@ router.get('/', async (req, res) => {
       return res.status(503).json({ error: 'Database not available' });
     }
 
-    let settings = await Settings.findOne({ tenantKey });
+    // Query by compId if available
+    let settings = null;
+    if (compId) {
+      settings = await Settings.findOne({ tenantKey, compId });
+    }
+    if (!settings) {
+      settings = await Settings.findOne({ tenantKey, compId: { $exists: false } });
+    }
 
     if (!settings) {
       // Return empty settings structure
@@ -97,17 +105,27 @@ router.get('/', async (req, res) => {
 router.put('/', async (req, res) => {
   try {
     const tenantKey = req.tenantKey || 'default';
-    console.log('PUT /settings - Tenant:', tenantKey);
+    const compId = req.wix?.compId || req.headers['x-wix-comp-id'] || null;
+    console.log('PUT /settings - Tenant:', tenantKey, 'compId:', compId);
 
     const mongoose = require('mongoose');
     if (mongoose.connection.readyState !== 1) {
       return res.status(503).json({ error: 'Database not available' });
     }
 
-    // Load existing settings or create new
-    let settings = await Settings.findOne({ tenantKey });
-    if (!settings) {
-      settings = new Settings({ tenantKey });
+    // Load existing settings or create new - query by compId if available
+    let settings = null;
+    if (compId) {
+      settings = await Settings.findOne({ tenantKey, compId });
+      if (!settings) {
+        settings = new Settings({ tenantKey, compId });
+        console.log('PUT /settings - Creating NEW document for compId:', compId);
+      }
+    } else {
+      settings = await Settings.findOne({ tenantKey, compId: { $exists: false } });
+      if (!settings) {
+        settings = new Settings({ tenantKey });
+      }
     }
 
     // Update fields
@@ -156,7 +174,16 @@ router.get('/ui-preferences', optionalWixAuth, async (req, res) => {
     let savedSettings = null;
     const mongoose = require('mongoose');
     if (mongoose.connection.readyState === 1) {
-      savedSettings = await Settings.findOne({ tenantKey });
+      // Query by compId if available, otherwise fall back to tenantKey only
+      if (compId) {
+        savedSettings = await Settings.findOne({ tenantKey, compId });
+        console.log('GET /ui-preferences - Queried by compId:', compId, 'Found:', !!savedSettings);
+      }
+      // Fall back to tenantKey-only query if no compId or no settings found
+      if (!savedSettings) {
+        savedSettings = await Settings.findOne({ tenantKey, compId: { $exists: false } });
+        console.log('GET /ui-preferences - Fallback to tenantKey only, Found:', !!savedSettings);
+      }
     }
 
     // Merge saved settings with defaults (defaults used when values not in DB)
@@ -243,18 +270,31 @@ router.post('/ui-preferences', optionalWixAuth, async (req, res) => {
     }
 
     // Load existing settings from DB or create new
-    let settings = await Settings.findOne({ tenantKey });
-    if (!settings) {
-      settings = new Settings({ tenantKey });
+    // IMPORTANT: Query by BOTH tenantKey AND compId to get/create the correct document
+    let settings = null;
+    
+    if (compId) {
+      // If compId is provided, look for settings specific to this widget instance
+      settings = await Settings.findOne({ tenantKey, compId });
+      console.log('POST /ui-preferences - Looking for existing settings with compId:', compId, 'Found:', !!settings);
+      
+      if (!settings) {
+        // Create NEW document for this compId (don't overwrite other widgets' settings)
+        settings = new Settings({ tenantKey, compId });
+        console.log('POST /ui-preferences - Creating NEW settings document for compId:', compId);
+      }
+    } else {
+      // No compId - use legacy tenantKey-only lookup (backwards compatibility)
+      settings = await Settings.findOne({ tenantKey, compId: { $exists: false } });
+      if (!settings) {
+        settings = new Settings({ tenantKey });
+        console.log('POST /ui-preferences - Creating NEW settings document (no compId)');
+      }
     }
 
-    // Always update instanceId and compId from Wix auth if available
-    // This ensures widgets are registered and can be queried by instanceId
+    // Always update instanceId from Wix auth if available
     if (instanceId) {
       settings.instanceId = instanceId;
-    }
-    if (compId) {
-      settings.compId = compId;
     }
 
     // Only update individual fields that are provided (only store edited values)
