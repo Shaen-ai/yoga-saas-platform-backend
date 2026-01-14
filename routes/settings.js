@@ -182,24 +182,35 @@ router.get('/ui-preferences', optionalWixAuth, async (req, res) => {
         // AUTO-CREATE: If we have both compId and instanceId but no document exists, create one
         if (!savedSettings && instanceId) {
           console.log('GET /ui-preferences - Creating new settings document for compId:', compId, 'instanceId:', instanceId);
-          savedSettings = await Settings.create({
-            tenantKey,
-            compId,
-            instanceId,
-            premiumPlanName: 'free'
-          });
-          console.log('GET /ui-preferences - Created new document with _id:', savedSettings._id);
+          try {
+            savedSettings = await Settings.create({
+              tenantKey,
+              compId,
+              instanceId,
+              premiumPlanName: 'free'
+            });
+            console.log('GET /ui-preferences - Created new document with _id:', savedSettings._id);
+          } catch (createError) {
+            console.warn('GET /ui-preferences - Could not create document:', createError.message);
+            // Continue without a document - will use defaults
+          }
         }
       }
       // Fall back to tenantKey-only query if no compId or no settings found
       if (!savedSettings) {
-        savedSettings = await Settings.findOne({ tenantKey, compId: { $exists: false } });
+        savedSettings = await Settings.findOne({ 
+          tenantKey, 
+          $or: [{ compId: null }, { compId: { $exists: false } }]
+        });
         console.log('GET /ui-preferences - Fallback to tenantKey only, Found:', !!savedSettings);
       }
     }
 
     // Merge saved settings with defaults (defaults used when values not in DB)
-    const globalSettings = savedSettings ? savedSettings.toObject() : {};
+    // Handle both Mongoose documents and plain objects
+    const globalSettings = savedSettings 
+      ? (typeof savedSettings.toObject === 'function' ? savedSettings.toObject() : savedSettings) 
+      : {};
 
     // Return settings in the format expected by the settings panel
     const panelSettings = {
@@ -281,17 +292,12 @@ router.post('/ui-preferences', optionalWixAuth, async (req, res) => {
       return res.json({ success: true, message: 'Database not connected - changes not persisted', settings: req.body });
     }
 
-    // Build the query and update objects
+    // Build the query - use compId if available, otherwise just tenantKey
     const query = { tenantKey };
     if (compId) {
       query.compId = compId;
-    } else {
-      // For legacy support: find documents without compId (null or doesn't exist)
-      query.$or = [
-        { compId: null },
-        { compId: { $exists: false } }
-      ];
     }
+    // Note: If no compId, we'll match/create a document with just tenantKey
 
     // Build the update object with $set for nested fields
     const updateObj = {
