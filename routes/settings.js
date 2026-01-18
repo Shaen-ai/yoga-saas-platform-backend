@@ -212,6 +212,9 @@ router.get('/ui-preferences', optionalWixAuth, async (req, res) => {
       ? (typeof savedSettings.toObject === 'function' ? savedSettings.toObject() : savedSettings) 
       : {};
 
+    // Use instanceId from database if available, otherwise from auth
+    const resolvedInstanceId = globalSettings.instanceId || instanceId || null;
+
     // Return settings in the format expected by the settings panel
     const panelSettings = {
     layout: {
@@ -259,18 +262,18 @@ router.get('/ui-preferences', optionalWixAuth, async (req, res) => {
       clickAction: globalSettings.uiPreferences?.clickAction || 'tooltip'
     },
     premiumPlanName: globalSettings.premiumPlanName || 'free',
-    instanceId: instanceId
+    instanceId: resolvedInstanceId
   };
 
     // Add auth info to response (used by settings panel for dashboard URL)
     panelSettings.auth = {
-      instanceId,
-      compId,
+      instanceId: resolvedInstanceId,
+      compId: globalSettings.compId || compId,
       instanceToken: authHeader,
       isAuthenticated: !!authHeader
     };
 
-    console.log('GET /ui-preferences - Returning settings for tenant:', tenantKey);
+    console.log('GET /ui-preferences - Returning settings for tenant:', tenantKey, 'resolvedInstanceId:', resolvedInstanceId);
     res.json(panelSettings);
   } catch (error) {
     console.error('Error in /ui-preferences:', error);

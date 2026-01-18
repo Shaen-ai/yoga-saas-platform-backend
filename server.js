@@ -106,6 +106,10 @@ const connectDB = async () => {
       useUnifiedTopology: true,
     });
     console.log('✅ MongoDB connected successfully');
+
+    // Fix indexes - drop any unique index on tenantKey alone
+    // This allows multiple settings documents with the same tenantKey (differentiated by compId)
+    await fixSettingsIndexes();
   } catch (err) {
     console.error('❌ MongoDB connection error:', err.message);
     if (process.env.NODE_ENV === 'production') {
@@ -113,6 +117,33 @@ const connectDB = async () => {
       process.exit(1);
     } else {
       console.log('⚠️  Running without database in development mode');
+    }
+  }
+};
+
+// Fix Settings collection indexes - remove problematic unique index on tenantKey
+const fixSettingsIndexes = async () => {
+  try {
+    const collection = mongoose.connection.collection('settings');
+    const indexes = await collection.indexes();
+    
+    // Find and drop any unique index on tenantKey alone
+    for (const index of indexes) {
+      // Check if it's a unique index on just tenantKey (not compound)
+      if (index.unique && index.key && index.key.tenantKey && Object.keys(index.key).length === 1) {
+        console.log(`⚠️  Found problematic unique index on tenantKey: ${index.name}`);
+        try {
+          await collection.dropIndex(index.name);
+          console.log(`✅ Dropped unique index: ${index.name}`);
+        } catch (dropErr) {
+          console.error(`❌ Failed to drop index ${index.name}:`, dropErr.message);
+        }
+      }
+    }
+  } catch (err) {
+    // Collection might not exist yet, which is fine
+    if (err.code !== 26) { // 26 = NamespaceNotFound
+      console.error('⚠️  Error checking indexes:', err.message);
     }
   }
 };
