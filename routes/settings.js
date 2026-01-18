@@ -4,6 +4,35 @@ const { addTenantFilter, addTenantToData } = require('../middleware/tenantMiddle
 const { optionalWixAuth } = require('../middleware/wixSdkAuth');
 const Settings = require('../models/Settings');
 
+// Helper function to get premiumPlanName from existing documents with the same instanceId
+// This ensures all widgets for the same Wix site share the same premium plan
+const getPremiumPlanFromInstance = async (instanceId) => {
+  if (!instanceId) return 'free';
+  
+  try {
+    // Find any existing settings document with this instanceId that has a premium plan
+    const existingSettings = await Settings.findOne({
+      instanceId,
+      premiumPlanName: { $exists: true, $ne: null, $ne: 'free' }
+    }).select('premiumPlanName').lean();
+    
+    if (existingSettings?.premiumPlanName) {
+      console.log(`[getPremiumPlanFromInstance] Found existing premium plan for instanceId ${instanceId}: ${existingSettings.premiumPlanName}`);
+      return existingSettings.premiumPlanName;
+    }
+    
+    // If no premium plan found, check if there's any document with this instanceId (even with 'free')
+    const anySettings = await Settings.findOne({ instanceId }).select('premiumPlanName').lean();
+    if (anySettings?.premiumPlanName) {
+      return anySettings.premiumPlanName;
+    }
+  } catch (error) {
+    console.error('[getPremiumPlanFromInstance] Error:', error.message);
+  }
+  
+  return 'free';
+};
+
 // Default settings template (used when values are not in DB)
 const defaultSettings = {
   uiPreferences: {
@@ -115,16 +144,22 @@ router.put('/', async (req, res) => {
 
     // Load existing settings or create new - query by compId if available
     let settings = null;
+    const instanceId = req.wix?.instanceId || null;
+    
     if (compId) {
       settings = await Settings.findOne({ tenantKey, compId });
       if (!settings) {
-        settings = new Settings({ tenantKey, compId });
-        console.log('PUT /settings - Creating NEW document for compId:', compId);
+        // Get premium plan from existing documents with the same instanceId
+        const inheritedPremiumPlan = await getPremiumPlanFromInstance(instanceId);
+        settings = new Settings({ tenantKey, compId, instanceId, premiumPlanName: inheritedPremiumPlan });
+        console.log('PUT /settings - Creating NEW document for compId:', compId, 'premiumPlan:', inheritedPremiumPlan);
       }
     } else {
       settings = await Settings.findOne({ tenantKey, compId: { $exists: false } });
       if (!settings) {
-        settings = new Settings({ tenantKey });
+        // Get premium plan from existing documents with the same instanceId
+        const inheritedPremiumPlan = await getPremiumPlanFromInstance(instanceId);
+        settings = new Settings({ tenantKey, instanceId, premiumPlanName: inheritedPremiumPlan });
       }
     }
 
@@ -181,13 +216,15 @@ router.get('/ui-preferences', optionalWixAuth, async (req, res) => {
         
         // AUTO-CREATE: If we have both compId and instanceId but no document exists, create one
         if (!savedSettings && instanceId) {
-          console.log('GET /ui-preferences - Creating new settings document for compId:', compId, 'instanceId:', instanceId);
+          // Get premium plan from existing documents with the same instanceId
+          const inheritedPremiumPlan = await getPremiumPlanFromInstance(instanceId);
+          console.log('GET /ui-preferences - Creating new settings document for compId:', compId, 'instanceId:', instanceId, 'premiumPlan:', inheritedPremiumPlan);
           try {
             savedSettings = await Settings.create({
               tenantKey,
               compId,
               instanceId,
-              premiumPlanName: 'free'
+              premiumPlanName: inheritedPremiumPlan
             });
             console.log('GET /ui-preferences - Created new document with _id:', savedSettings._id);
           } catch (createError) {
@@ -302,6 +339,15 @@ router.post('/ui-preferences', optionalWixAuth, async (req, res) => {
     }
     // Note: If no compId, we'll match/create a document with just tenantKey
 
+    // Check if document exists - if not, we'll need to inherit premium plan
+    const existingDoc = await Settings.findOne(query).select('_id').lean();
+    
+    // Get premium plan to use for new documents
+    const inheritedPremiumPlan = existingDoc ? null : await getPremiumPlanFromInstance(instanceId);
+    if (!existingDoc) {
+      console.log('POST /ui-preferences - Will create new document with inherited premiumPlan:', inheritedPremiumPlan);
+    }
+
     // Build the update object with $set for nested fields
     const updateObj = {
       $set: {
@@ -309,7 +355,9 @@ router.post('/ui-preferences', optionalWixAuth, async (req, res) => {
         updatedAt: new Date()
       },
       $setOnInsert: {
-        createdAt: new Date()
+        createdAt: new Date(),
+        // Set inherited premium plan for new documents
+        ...(inheritedPremiumPlan && { premiumPlanName: inheritedPremiumPlan })
       }
     };
 

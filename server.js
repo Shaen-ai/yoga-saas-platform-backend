@@ -251,6 +251,35 @@ const computeTenantKey = (instanceId, compId) => {
   return `yoga-${instanceId}${compId ? `-${compId}` : ''}`;
 };
 
+// Helper function to get premiumPlanName from existing documents with the same instanceId
+// This ensures all widgets for the same Wix site share the same premium plan
+const getPremiumPlanFromInstance = async (instanceId) => {
+  if (!instanceId) return 'free';
+  
+  try {
+    // Find any existing settings document with this instanceId that has a premium plan
+    const existingSettings = await Settings.findOne({
+      instanceId,
+      premiumPlanName: { $exists: true, $ne: null, $ne: 'free' }
+    }).select('premiumPlanName').lean();
+    
+    if (existingSettings?.premiumPlanName) {
+      console.log(`[getPremiumPlanFromInstance] Found existing premium plan for instanceId ${instanceId}: ${existingSettings.premiumPlanName}`);
+      return existingSettings.premiumPlanName;
+    }
+    
+    // If no premium plan found, check if there's any document with this instanceId (even with 'free')
+    const anySettings = await Settings.findOne({ instanceId }).select('premiumPlanName').lean();
+    if (anySettings?.premiumPlanName) {
+      return anySettings.premiumPlanName;
+    }
+  } catch (error) {
+    console.error('[getPremiumPlanFromInstance] Error:', error.message);
+  }
+  
+  return 'free';
+};
+
 // Default widget config
 const defaultWidgetConfig = {
   layout: {
@@ -291,14 +320,18 @@ app.post('/api/widgets/register', optionalWixAuth, async (req, res) => {
     // Find or create settings for this widget
     let settings = await Settings.findOne({ tenantKey });
     if (!settings) {
+      // Get premium plan from existing documents with the same instanceId
+      const inheritedPremiumPlan = await getPremiumPlanFromInstance(instanceId);
+      
       settings = new Settings({
         tenantKey,
         instanceId,
         compId,
-        widgetName: widgetName || `Widget ${compId.slice(-6)}`
+        widgetName: widgetName || `Widget ${compId.slice(-6)}`,
+        premiumPlanName: inheritedPremiumPlan
       });
       await settings.save();
-      console.log('[API /widgets/register] Created new widget:', { tenantKey, instanceId, compId });
+      console.log('[API /widgets/register] Created new widget:', { tenantKey, instanceId, compId, premiumPlanName: inheritedPremiumPlan });
     } else {
       // Update instanceId/compId if not set
       let needsUpdate = false;
@@ -590,13 +623,15 @@ app.get('/api/widget-data', optionalWixAuth, async (req, res) => {
 
     // AUTO-CREATE: If we have both compId and instanceId but no document exists, create one
     if (!savedSettings && compId && instanceId) {
-      console.log('[Widget Data] 🆕 No settings found - creating new document for compId:', compId, 'instanceId:', instanceId);
+      // Get premium plan from existing documents with the same instanceId
+      const inheritedPremiumPlan = await getPremiumPlanFromInstance(instanceId);
+      console.log('[Widget Data] 🆕 No settings found - creating new document for compId:', compId, 'instanceId:', instanceId, 'premiumPlan:', inheritedPremiumPlan);
       try {
         const newSettings = await Settings.create({
           tenantKey: desiredKey,
           compId,
           instanceId,
-          premiumPlanName: 'free'
+          premiumPlanName: inheritedPremiumPlan
         });
         savedSettings = newSettings.toObject();
         console.log('[Widget Data] ✅ Created new settings document with _id:', savedSettings._id);
