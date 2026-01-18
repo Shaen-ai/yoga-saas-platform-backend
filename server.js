@@ -468,7 +468,9 @@ app.get('/api/widget-data', optionalWixAuth, async (req, res) => {
         default: [],
         custom: [],
         showCategoryFilter: true
-      }
+      },
+      // Default premium plan - free (widget will show notice in editor, hide on published site)
+      premiumPlanName: 'free'
     };
 
     // CASE 1: No instanceId AND no compId - return default data
